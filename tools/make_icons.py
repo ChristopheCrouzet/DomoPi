@@ -18,7 +18,9 @@ HEAD = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none"
 
 
 def w(name, body):
-    with open(os.path.join(OUT, name + ".svg"), "w") as f:
+    # newline="\n" : sortie identique sous Windows et Linux (pas de CRLF,
+    # sinon chaque régénération sous Windows fait un faux diff git complet)
+    with open(os.path.join(OUT, name + ".svg"), "w", newline="\n") as f:
         f.write(HEAD + body + "</svg>\n")
 
 
@@ -335,4 +337,4 @@ w("interrupteur_off",
   r_(6.5, 15, 35, 18, 9, G, 2.2)
   + c(15.5, 24, 6.5, G, 2.2) + c(15.5, 24, 2.5, G, 1.7))
 
-print("28 icônes régénérées" if len(os.listdir(OUT)) >= 28 else os.listdir(OUT))
+print(f"{sum(f.endswith('.svg') for f in os.listdir(OUT))} icônes SVG dans {OUT}")

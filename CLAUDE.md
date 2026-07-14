@@ -43,7 +43,7 @@ domopi setup/
 │   ├── js/app.js            logique visualiseur
 │   ├── js/charts.js         renderChart() — SVG min/moy/max, sans dépendance
 │   ├── js/admin.js          logique admin
-│   ├── icons/               32 icônes SVG livrées + uploads utilisateur
+│   ├── icons/               36 icônes SVG générées + uploads utilisateur
 │   └── backgrounds/         fonds de page (uploads)
 ├── tools/
 │   ├── make_icons.py        générateur des icônes SVG intégrées
@@ -167,13 +167,17 @@ deux valent 0, donc les tâches passent une fois au lancement.
 
 ## Icônes (static/icons/ + tools/make_icons.py)
 
-Les 32 icônes SVG intégrées sont **générées** par `tools/make_icons.py`
+Les icônes SVG intégrées (36 à ce jour) sont **générées** par `tools/make_icons.py`
 (géométrie calculée, centrée sur (24,24), viewBox 48×48, traits principaux 2.2
 et détails 1.5, palette ambre/gris/blanc du thème). Pour modifier ou ajouter
 une icône : éditer ce script puis le relancer (`python3 tools/make_icons.py`),
 ne pas retoucher les SVG à la main. Contrôle visuel recommandé : rasteriser en
 planche contact avec cairosvg + Pillow avant livraison (vérifier symétrie,
-chevauchements, lisibilité à 42 px). Les icônes ajoutées par l'utilisateur via
+chevauchements, lisibilité à 42 px). La skill **`/icone`**
+(`M:\Domotique\Domopi\.claude\skills\icone\SKILL.md`, hors dépôt — les
+ressources Claude vivent à la racine de l'espace de travail) encadre ce flux
+pour les demandes ponctuelles d'icônes : contrat de style, méthode, planche
+contact, déploiement — l'utiliser dès qu'on demande une icône. Les icônes ajoutées par l'utilisateur via
 l'upload ne sont pas concernées et sont préservées par l'installeur (`cp -n`).
 
 ## Pilotage proportionnel : échelles (`scales` + `devices.scale_id`)

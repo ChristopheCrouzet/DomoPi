@@ -41,6 +41,7 @@ id domopi >/dev/null 2>&1 || useradd --system --home "$DATA_DIR" --shell /usr/sb
 msg "Installation de l'application dans $APP_DIR…"
 mkdir -p "$APP_DIR" "$DATA_DIR" "$CONF_DIR" "$TLS_DIR"
 cp -r "$SRC_DIR/domopi" "$APP_DIR/"
+find "$APP_DIR/domopi" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 # statique : ne pas écraser les icônes/fonds ajoutés par l'utilisateur
 mkdir -p "$APP_DIR/static"
 cp -rn "$SRC_DIR/static/." "$APP_DIR/static/" 2>/dev/null || true

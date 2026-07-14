@@ -559,7 +559,8 @@
           <div class="fix"><button class="btn sm danger" data-a="d">Suppr.</button></div></div>`;
         div.querySelector("[data-a=e]").onclick = () => pageForm(p);
         div.querySelector("[data-a=c]").onclick = () =>
-          pageForm({ parent_id: p.id, title: "", background: "", dual_layout: 0, sort_order: 0 });
+          pageForm({ parent_id: p.id, title: "", background: "", dual_layout: 0,
+                     sort_order: nextPageOrder(p.id) });
         div.querySelector("[data-a=w]").onclick = () => openWidgetsEditor(p);
         div.querySelector("[data-a=d]").onclick = async () => {
           if (!confirm(`Supprimer la page « ${p.title} » et ses sous-pages ?`)) return;
@@ -572,8 +573,15 @@
     render(null, 0);
     if (!pages.length) tree.innerHTML = "<p class='muted'>Aucune page pour l'instant.</p>";
   }
+  /* Ordre par défaut d'une nouvelle page : max + 1 parmi ses pages sœurs
+     (pages racines pour une racine, sous-pages du même parent sinon). */
+  const nextPageOrder = parentId => {
+    const sibs = pages.filter(x => x.parent_id === parentId);
+    return sibs.length ? Math.max(...sibs.map(x => x.sort_order || 0)) + 1 : 0;
+  };
   $("#page-add-root").onclick = () =>
-    pageForm({ parent_id: null, title: "", background: "", dual_layout: 0, sort_order: 0 });
+    pageForm({ parent_id: null, title: "", background: "", dual_layout: 0,
+               sort_order: nextPageOrder(null) });
 
   function pageForm(p) {
     const parentOpts = [`<option value="">— racine —</option>`].concat(
