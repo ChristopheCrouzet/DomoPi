@@ -61,6 +61,7 @@ def poll_once():
         for d in devices:
             v = values.get(d["external_id"])
             if v is None:
+                journal.error(c["name"], f"pas de réponse pour '{d['name']}'")
                 continue
             journal.debug(c["name"], f"{d['name']} = {v}")
             try:

@@ -2,6 +2,8 @@
 (function () {
   const $ = s => document.querySelector(s);
   let me = null, pages = [], devices = {}, currentPage = null, refreshTimer = null;
+  let currentWidgets = [], liveTimer = null;
+  const LIVE_REFRESH_S = 10;   // cadence des widgets état+valeur affichés
 
   const api = async (url, opts) => {
     const r = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
@@ -24,7 +26,7 @@
 
   /* ------------------------------------------------ session */
   function showLogin() {
-    clearInterval(refreshTimer);
+    clearInterval(refreshTimer); clearInterval(liveTimer);
     $("#banner").hidden = true; $("#main").hidden = true; $("#login-view").hidden = false;
     $("#page-bg").style.background = "";
   }
@@ -109,6 +111,7 @@
     let widgets = await api(`/api/pages/${id}/widgets`);
     if (page.dual_layout)
       widgets = widgets.filter(w => w.layout === "both" || w.layout === (isMobile() ? "mobile" : "desktop"));
+    currentWidgets = widgets;
 
     const kids = childPages(id);
     const frag = document.createElement("div");
@@ -133,6 +136,38 @@
     }
     main.innerHTML = ""; main.appendChild(frag);
     document.querySelectorAll(".chart-head button.active").forEach(b => b.click());
+    if (!soft) setLive(widgets.filter(w => w.wtype === "device" && w.device_id)
+                              .map(w => w.device_id));
+  }
+
+  /* Rafraîchissement rapide des widgets état+valeur affichés : interroge
+     les connecteurs à la demande (sans historiser) et remplace uniquement
+     les cartes concernées — les graphes ne sont pas re-rendus. */
+  function setLive(ids) {
+    clearInterval(liveTimer); liveTimer = null;
+    ids = [...new Set(ids)];
+    if (!ids.length) return;
+    liveTimer = setInterval(async () => {
+      if (document.hidden || currentPage == null) return;
+      try {
+        const rows = await api("/api/devices/refresh", { method: "POST",
+          body: JSON.stringify({ ids }) });
+        let changed = false;
+        rows.forEach(r => {
+          const d = devices[r.id];
+          if (d && (d.last_value !== r.last_value || d.last_seen !== r.last_seen)) {
+            d.last_value = r.last_value; d.last_seen = r.last_seen; changed = true;
+          }
+        });
+        if (changed) refreshDeviceCards();
+      } catch { /* silencieux : le cycle 60 s reprendra */ }
+    }, LIVE_REFRESH_S * 1000);
+  }
+  function refreshDeviceCards() {
+    document.querySelectorAll(".card[data-wid]").forEach(el => {
+      const w = currentWidgets.find(x => x.id === +el.dataset.wid);
+      if (w) el.replaceWith(deviceCard(w));
+    });
   }
 
   function linkCard(label, onClick) {
@@ -158,6 +193,7 @@
     const stale = d.last_seen && (Date.now() / 1000 - d.last_seen > 3 * 3600);
     const c = document.createElement("div");
     c.className = "card" + (d.controllable ? " clickable" : "");
+    if (w.id) c.dataset.wid = w.id;
 
     // Icône : pour un état partiel (0 < pct < 100), l'icône "on" est révélée
     // depuis le bas à hauteur du pourcentage, superposée à l'icône "off".
@@ -285,7 +321,8 @@
 
   /* ------------------------------------------------ journal */
   async function renderJournal() {
-    currentPage = null;
+    currentPage = null; currentWidgets = [];
+    clearInterval(liveTimer); liveTimer = null;
     document.querySelectorAll("#root-nav a").forEach(a => a.classList.remove("active"));
     $("#page-bg").style.background = "";
     const main = $("#main");

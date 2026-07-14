@@ -184,7 +184,9 @@ class WesMqttConnector(Connector):
             topic = meta.get("state_topic") or desc.get("meta", {}).get("state_topic", "")
             payload = snapshot.get(topic)
             if payload is None:
-                journal.error(self.name,
+                # le poller journalise l'absence de réponse à sa cadence ;
+                # ici (appelé aussi par le rafraîchissement 10 s) : debug.
+                journal.debug(self.name,
                               f"pas de réponse pour '{d['name']}' (topic {topic or '?'})")
                 continue
             v = self._extract(payload, meta.get("value_template", ""))

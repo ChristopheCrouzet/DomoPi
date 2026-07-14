@@ -300,6 +300,45 @@ async def set_device(did: int, request: Request):
     return {"ok": True}
 
 
+@app.post("/api/devices/refresh")
+async def refresh_devices(request: Request):
+    """Rafraîchit à la demande la valeur courante de périphériques (widgets
+    état+valeur affichés), y compris non surveillés. Ne stocke aucune mesure :
+    l'historique reste au pas du poller."""
+    auth.require_user(request)
+    b = await request.json()
+    ids = [int(i) for i in (b.get("ids") or [])][:60]
+    if not ids:
+        return []
+    conn = db.get_conn()
+    qmarks = ",".join("?" * len(ids))
+    rows = [dict(r) | {"meta": json.loads(r["meta"])} for r in conn.execute(
+        f"SELECT * FROM devices WHERE id IN ({qmarks})", ids).fetchall()]
+    now = int(time.time())
+    by_conn: dict[int, list] = {}
+    for d in rows:
+        by_conn.setdefault(d["connector_id"], []).append(d)
+    for cid, devs in by_conn.items():
+        inst = poller.get_instance(cid)
+        if inst is None:
+            continue
+        try:
+            values = await asyncio.to_thread(inst.poll, devs)
+        except Exception as exc:
+            journal.debug("refresh", f"échec rafraîchissement connecteur {cid} : {exc}")
+            continue
+        for d in devs:
+            v = values.get(d["external_id"])
+            if v is not None:
+                conn.execute("UPDATE devices SET last_value=?, last_seen=? WHERE id=?",
+                             (str(v), now, d["id"]))
+    conn.commit()
+    out = conn.execute(
+        f"SELECT id,last_value,last_seen FROM devices WHERE id IN ({qmarks})",
+        ids).fetchall()
+    return [dict(r) for r in out]
+
+
 # ================================================================ séries
 @app.get("/api/series/{did}")
 async def series(did: int, request: Request, t_from: int, t_to: int):

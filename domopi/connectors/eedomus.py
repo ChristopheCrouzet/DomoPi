@@ -24,16 +24,15 @@ TIMEOUT = 10.0
 class EedomusConnector(Connector):
     type_name = "eedomus"
 
-    @property
-    def base_url(self) -> str:
-        return f"http://{self.config['host']}/api/get"
-
     def _params(self, **kw) -> dict:
         return {"api_user": self.config.get("api_user", ""),
                 "api_secret": self.config.get("api_secret", ""), **kw}
 
-    def _call(self, action: str, **kw):
-        r = httpx.get(self.base_url, params=self._params(action=action, **kw),
+    def _call(self, action: str, endpoint: str = "get", **kw):
+        # L'API eedomus a deux points d'entrée : /api/get (lectures) et
+        # /api/set (commandes periph.value / periph.macro).
+        url = f"http://{self.config['host']}/api/{endpoint}"
+        r = httpx.get(url, params=self._params(action=action, **kw),
                       timeout=TIMEOUT)
         r.raise_for_status()
         # L'API locale répond en Latin-1 sans déclarer de charset : décoder
@@ -85,16 +84,21 @@ class EedomusConnector(Connector):
         for d in devices:
             p = by_id.get(d["external_id"])
             if p is None or p.get("last_value") in (None, ""):
-                journal.error(self.name,
+                # le poller journalise l'absence de réponse à sa cadence ;
+                # ici (appelé aussi par le rafraîchissement 10 s) : debug.
+                journal.debug(self.name,
                               f"pas de réponse pour '{d['name']}' ({d['external_id']})")
                 continue
             values[d["external_id"]] = p["last_value"]
         return values
 
     def set_value(self, device: dict, value: str) -> bool:
+        # eedomus attend des valeurs numériques : on/off -> 100/0.
+        v = {"on": "100", "off": "0"}.get(value.strip().lower(), value)
         try:
-            self._call("periph.value", periph_id=device["external_id"], value=value)
-            journal.info(self.name, f"pilotage '{device['name']}' -> {value}")
+            self._call("periph.value", endpoint="set",
+                       periph_id=device["external_id"], value=v)
+            journal.info(self.name, f"pilotage '{device['name']}' -> {v}")
             return True
         except Exception as exc:
             journal.error(self.name, f"échec pilotage '{device['name']}' : {exc}")

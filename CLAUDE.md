@@ -208,6 +208,15 @@ texte, sans historique). L'intervalle (`poll_interval_s`, défaut 300, plancher
 sans redémarrage. `get_instance()` met en cache les instances de connecteurs et
 les reconstruit si la config en base a changé.
 
+En complément, `POST /api/devices/refresh` (main.py) lit **à la demande** la
+valeur courante d'une liste de périphériques (même non surveillés) via
+`inst.poll()`, met à jour `last_value`/`last_seen` mais **n'historise pas**.
+Le visualiseur l'appelle toutes les 10 s (`LIVE_REFRESH_S` dans app.js) pour
+les widgets état+valeur de la page affichée uniquement (pas les graphes) ;
+suspendu si l'onglet est masqué. Les « pas de réponse » sont journalisés en
+erreur par le poller à sa cadence, en debug seulement dans les connecteurs
+(sinon le rafraîchissement 10 s inonderait le journal).
+
 ## Connecteurs
 
 Pour **ajouter un connecteur**, créer une classe héritant de
@@ -219,7 +228,10 @@ config dans `static/js/admin.js:CONN_FIELDS` / `CONN_DEFAULTS`.
 
 - **eedomus** : un seul `periph.list` par cycle (contient `last_value` de tous
   les périphériques → économe). Pas d'historique local côté box. Détection
-  actionneur par `usage_name`. Doc : https://doc.eedomus.com/en/index.php/API_eedomus
+  actionneur par `usage_name`. Attention : lectures sur `/api/get`, commandes
+  sur **`/api/set`** (deux points d'entrée distincts) ; `set_value` traduit
+  on/off en 100/0. La box répond en Latin-1 sans le déclarer (décodage manuel
+  dans `_call`). Doc : https://doc.eedomus.com/en/index.php/API_eedomus
 - **wes_mqtt** : en réalité un client **Home Assistant MQTT Discovery**
   générique. Il s'abonne à `homeassistant/+/+/config` (et `+/+/+/config`),
   mémorise les entités et leurs `state_topic`, met en cache les derniers

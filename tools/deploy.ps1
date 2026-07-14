@@ -23,7 +23,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 $Tarball = Join-Path $env:TEMP "domopi-deploy.tar.gz"
 
 Write-Host "[1/3] Archive du code..."
-tar -czf $Tarball -C $Root domopi static requirements.txt
+tar -czf $Tarball --exclude "__pycache__" -C $Root domopi static requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "tar a echoue" }
 
 Write-Host "[2/3] Envoi vers ${RemoteHost}..."
