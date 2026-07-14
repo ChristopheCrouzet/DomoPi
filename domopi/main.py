@@ -251,12 +251,24 @@ async def discover(cid: int, request: Request):
 @app.get("/api/devices")
 async def list_devices(request: Request, monitored: int | None = None):
     auth.require_user(request)
-    q = ("SELECT d.*, c.name AS connector_name, c.type AS connector_type "
+    q = ("SELECT d.*, c.name AS connector_name, c.type AS connector_type, "
+         "c.config AS connector_config "
          "FROM devices d JOIN connectors c ON c.id=d.connector_id")
     if monitored is not None:
         q += f" WHERE d.monitored={1 if monitored else 0}"
     rows = db.get_conn().execute(q + " ORDER BY d.room, d.name").fetchall()
-    return [dict(r) | {"meta": json.loads(r["meta"])} for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r) | {"meta": json.loads(r["meta"])}
+        # Seule la cadence de rafraîchissement du connecteur est exposée —
+        # jamais sa config complète (identifiants).
+        try:
+            lrs = int(json.loads(d.pop("connector_config")).get("live_refresh_s", 10))
+        except (ValueError, TypeError):
+            lrs = 10
+        d["live_refresh_s"] = max(0, lrs)
+        out.append(d)
+    return out
 
 
 @app.put("/api/devices/{did}")

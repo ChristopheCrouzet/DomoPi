@@ -2,8 +2,7 @@
 (function () {
   const $ = s => document.querySelector(s);
   let me = null, pages = [], devices = {}, currentPage = null, refreshTimer = null;
-  let currentWidgets = [], liveTimer = null;
-  const LIVE_REFRESH_S = 10;   // cadence des widgets état+valeur affichés
+  let currentWidgets = [], liveTimers = [];
 
   const api = async (url, opts) => {
     const r = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
@@ -26,7 +25,7 @@
 
   /* ------------------------------------------------ session */
   function showLogin() {
-    clearInterval(refreshTimer); clearInterval(liveTimer);
+    clearInterval(refreshTimer); liveTimers.forEach(clearInterval); liveTimers = [];
     $("#banner").hidden = true; $("#main").hidden = true; $("#login-view").hidden = false;
     $("#page-bg").style.background = "";
   }
@@ -142,26 +141,38 @@
 
   /* Rafraîchissement rapide des widgets état+valeur affichés : interroge
      les connecteurs à la demande (sans historiser) et remplace uniquement
-     les cartes concernées — les graphes ne sont pas re-rendus. */
+     les cartes concernées — les graphes ne sont pas re-rendus. La cadence
+     vient du réglage live_refresh_s de chaque contrôleur (0 = désactivé,
+     plancher 5 s) : un timer par cadence distincte. */
   function setLive(ids) {
-    clearInterval(liveTimer); liveTimer = null;
-    ids = [...new Set(ids)];
-    if (!ids.length) return;
-    liveTimer = setInterval(async () => {
-      if (document.hidden || currentPage == null) return;
-      try {
-        const rows = await api("/api/devices/refresh", { method: "POST",
-          body: JSON.stringify({ ids }) });
-        let changed = false;
-        rows.forEach(r => {
-          const d = devices[r.id];
-          if (d && (d.last_value !== r.last_value || d.last_seen !== r.last_seen)) {
-            d.last_value = r.last_value; d.last_seen = r.last_seen; changed = true;
-          }
-        });
-        if (changed) refreshDeviceCards();
-      } catch { /* silencieux : le cycle 60 s reprendra */ }
-    }, LIVE_REFRESH_S * 1000);
+    liveTimers.forEach(clearInterval); liveTimers = [];
+    const groups = new Map();
+    [...new Set(ids)].forEach(id => {
+      const d = devices[id];
+      if (!d) return;
+      const s = d.live_refresh_s ?? 10;
+      if (!s) return;                          // 0 = désactivé pour ce contrôleur
+      const key = Math.max(5, s);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(id);
+    });
+    for (const [s, gids] of groups)
+      liveTimers.push(setInterval(() => liveTick(gids), s * 1000));
+  }
+  async function liveTick(ids) {
+    if (document.hidden || currentPage == null) return;
+    try {
+      const rows = await api("/api/devices/refresh", { method: "POST",
+        body: JSON.stringify({ ids }) });
+      let changed = false;
+      rows.forEach(r => {
+        const d = devices[r.id];
+        if (d && (d.last_value !== r.last_value || d.last_seen !== r.last_seen)) {
+          d.last_value = r.last_value; d.last_seen = r.last_seen; changed = true;
+        }
+      });
+      if (changed) refreshDeviceCards();
+    } catch { /* silencieux : le cycle 60 s reprendra */ }
   }
   function refreshDeviceCards() {
     document.querySelectorAll(".card[data-wid]").forEach(el => {
@@ -322,7 +333,7 @@
   /* ------------------------------------------------ journal */
   async function renderJournal() {
     currentPage = null; currentWidgets = [];
-    clearInterval(liveTimer); liveTimer = null;
+    liveTimers.forEach(clearInterval); liveTimers = [];
     document.querySelectorAll("#root-nav a").forEach(a => a.classList.remove("active"));
     $("#page-bg").style.background = "";
     const main = $("#main");

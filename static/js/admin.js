@@ -44,20 +44,24 @@
   };
 
   /* ============================================ connecteurs */
+  const LIVE_FIELD = ["live_refresh_s",
+    "Rafraîchissement des widgets affichés (secondes, 0 = désactivé, min 5)"];
   const CONN_FIELDS = {
     eedomus: [["host", "Adresse IP de la box eedomus"],
               ["api_user", "api_user (portail eedomus → Mon compte → Paramètres → API)"],
-              ["api_secret", "api_secret"]],
+              ["api_secret", "api_secret"],
+              LIVE_FIELD],
     wes_mqtt: [["host", "Broker MQTT (127.0.0.1 = Mosquitto local du Raspberry)"],
                ["port", "Port (1883)"],
                ["username", "Utilisateur MQTT (optionnel)"],
                ["password", "Mot de passe MQTT (optionnel)"],
-               ["discovery_prefix", "Préfixe discovery (homeassistant)"]],
+               ["discovery_prefix", "Préfixe discovery (homeassistant)"],
+               LIVE_FIELD],
   };
   const CONN_DEFAULTS = {
-    eedomus: { host: "", api_user: "", api_secret: "" },
+    eedomus: { host: "", api_user: "", api_secret: "", live_refresh_s: 10 },
     wes_mqtt: { host: "127.0.0.1", port: 1883, username: "", password: "",
-                discovery_prefix: "homeassistant" },
+                discovery_prefix: "homeassistant", live_refresh_s: 10 },
   };
 
   async function loadConnectors() {

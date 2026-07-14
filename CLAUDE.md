@@ -211,9 +211,11 @@ les reconstruit si la config en base a changé.
 En complément, `POST /api/devices/refresh` (main.py) lit **à la demande** la
 valeur courante d'une liste de périphériques (même non surveillés) via
 `inst.poll()`, met à jour `last_value`/`last_seen` mais **n'historise pas**.
-Le visualiseur l'appelle toutes les 10 s (`LIVE_REFRESH_S` dans app.js) pour
-les widgets état+valeur de la page affichée uniquement (pas les graphes) ;
-suspendu si l'onglet est masqué. Les « pas de réponse » sont journalisés en
+Le visualiseur l'appelle pour les widgets état+valeur de la page affichée
+uniquement (pas les graphes), à la cadence `live_refresh_s` configurée **par
+contrôleur** (défaut 10 s, 0 = désactivé, plancher 5 s — exposée aux lecteurs
+via `/api/devices`, jamais le reste de la config) ; suspendu si l'onglet est
+masqué. Les « pas de réponse » sont journalisés en
 erreur par le poller à sa cadence, en debug seulement dans les connecteurs
 (sinon le rafraîchissement 10 s inonderait le journal).
 
