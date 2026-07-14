@@ -209,6 +209,15 @@ async def discover(cid: int, request: Request):
     except Exception as exc:
         journal.error("discover", f"échec découverte connecteur {cid} : {exc}")
         raise HTTPException(502, f"Découverte impossible : {exc}")
+    # Connecteurs MQTT : après une (re)connexion au broker, les annonces
+    # retained du WES arrivent avec un léger délai — retenter quelques
+    # secondes avant de conclure à l'absence de périphériques.
+    if not found and getattr(inst, "broker_connected", None) is not None:
+        for _ in range(8):
+            await asyncio.sleep(1)
+            found = await asyncio.to_thread(inst.discover)
+            if found:
+                break
     conn = db.get_conn()
     for d in found:
         conn.execute(
@@ -233,6 +242,7 @@ async def discover(cid: int, request: Request):
     bc = getattr(inst, "broker_connected", None)
     if bc is not None:
         resp["broker_connected"] = bc
+        resp["connected_s"] = getattr(inst, "connected_s", 0)
         resp["server_ip"] = _lan_ip()
     return resp
 

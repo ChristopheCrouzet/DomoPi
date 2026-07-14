@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 
 import paho.mqtt.client as mqtt
 
@@ -32,6 +33,7 @@ class WesMqttConnector(Connector):
         self._client: mqtt.Client | None = None
         self._lock = threading.Lock()
         self._connected = False                  # état DomoPi <-> broker
+        self._connected_at = 0.0                 # epoch de la dernière connexion
         self._discovered: dict[str, dict] = {}   # external_id -> descriptor
         self._values: dict[str, str] = {}        # state_topic -> payload brut
 
@@ -39,6 +41,11 @@ class WesMqttConnector(Connector):
     def broker_connected(self) -> bool:
         """Vrai si DomoPi est actuellement connecté au broker MQTT."""
         return self._connected
+
+    @property
+    def connected_s(self) -> int:
+        """Ancienneté de la connexion au broker, en secondes (0 si déconnecté)."""
+        return int(time.time() - self._connected_at) if self._connected else 0
 
     # ------------------------------------------------------------- MQTT
     def start(self):
@@ -57,6 +64,7 @@ class WesMqttConnector(Connector):
                                          "(identifiants MQTT du connecteur ?)")
                 return
             self._connected = True
+            self._connected_at = time.time()
             cl.subscribe([(f"{prefix}/+/+/config", 0), (f"{prefix}/+/+/+/config", 0)])
             journal.info(self.name, "connecté au broker MQTT")
 

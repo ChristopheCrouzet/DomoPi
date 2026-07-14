@@ -84,8 +84,10 @@
           const r = await api(`/api/connectors/${c.id}/discover`);
           toast(`${r.count} périphériques découverts`);
           if (!r.count && c.type === "wes_mqtt") {
-            // Deux pannes distinctes : DomoPi <-> broker local, ou WES <-> broker.
+            // Trois cas : DomoPi <-> broker en échec, connexion toute récente
+            // (annonces pas encore reçues), ou vrai problème côté WES.
             if (r.broker_connected === false) brokerHelp(c);
+            else if ((r.connected_s ?? 999) < 30) waitHelp(r.connected_s);
             else wesMqttHelp(c, null, r.server_ip);
           }
           loadDevices();
@@ -151,6 +153,26 @@
         <div class="fix"><button class="btn" id="bh-close">Fermer</button></div>
       </div>`, dlg => {
       dlg.querySelector("#bh-close").onclick = () => dlg.close();
+    });
+  }
+
+  /* Cas « il faut juste attendre » : DomoPi vient de se (re)connecter au
+     broker (après correction de la config ou redémarrage), les annonces du
+     WES ne sont probablement pas encore arrivées. */
+  function waitHelp(connectedS) {
+    dialog(`<h2 style="margin-top:0">Connexion au broker toute récente</h2>
+      <p>DomoPi s'est connecté au broker MQTT il y a
+         <b>${esc(connectedS ?? "quelques")}&nbsp;s</b> : les annonces du WES
+         n'ont probablement pas encore été reçues — ce n'est sans doute
+         <b>pas un problème de configuration</b>.</p>
+      <p>Patientez une trentaine de secondes puis relancez
+         « Découvrir les périphériques ». Si rien ne vient au bout de
+         quelques essais, ouvrez la page MQTT du WES et cliquez
+         « Envoyer Discovery », ou revoyez sa configuration.</p>
+      <div class="row" style="margin-top:.8rem">
+        <div class="fix"><button class="btn" id="wh-close">Fermer</button></div>
+      </div>`, dlg => {
+      dlg.querySelector("#wh-close").onclick = () => dlg.close();
     });
   }
 
