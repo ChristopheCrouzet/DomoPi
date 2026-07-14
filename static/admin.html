@@ -50,11 +50,39 @@
      « 0-100&nbsp;% » pour un pilotage en pourcentage (gradateur de lampe,
      ouverture partielle de volet). Cliquez sur une icône pour la changer.</p>
   <div class="row" style="max-width:420px">
-    <div><label for="dev-filter">Filtrer</label><input id="dev-filter" type="text" placeholder="nom, pièce, contrôleur…"></div>
+    <div><label for="dev-filter">Recherche globale</label><input id="dev-filter" type="text" placeholder="nom, pièce, contrôleur…"></div>
   </div>
+  <p class="muted" style="margin:.4rem 0 .2rem">Cliquez sur un en-tête de colonne pour trier
+     (re-cliquez pour inverser l'ordre) ; la seconde ligne filtre colonne par colonne.</p>
   <table>
-    <thead><tr><th>Surv.</th><th>Nom</th><th>Pièce</th><th>Contrôleur</th><th>Type</th>
-    <th>Unité</th><th>Pilotable</th><th>0-100&nbsp;%</th><th>Icônes on / off</th></tr></thead>
+    <thead>
+      <tr id="dev-head">
+        <th data-sort="monitored">Surv.</th>
+        <th data-sort="name">Nom</th>
+        <th data-sort="room">Pièce</th>
+        <th data-sort="connector_name">Contrôleur</th>
+        <th data-sort="kind">Type</th>
+        <th data-sort="unit">Unité</th>
+        <th data-sort="controllable">Pilotable</th>
+        <th data-sort="dimmable">0-100&nbsp;%</th>
+        <th>Icônes on / off</th>
+      </tr>
+      <tr id="dev-filters">
+        <th><select data-f="monitored" title="Surveillé ?"><option value="">tous</option>
+          <option value="1">oui</option><option value="0">non</option></select></th>
+        <th><input data-f="name" type="text" placeholder="filtrer…"></th>
+        <th><input data-f="room" type="text" placeholder="filtrer…"></th>
+        <th><input data-f="connector_name" type="text" placeholder="filtrer…"></th>
+        <th><select data-f="kind"><option value="">tous</option>
+          <option value="sensor">capteur</option><option value="actuator">sortie</option></select></th>
+        <th><input data-f="unit" type="text" placeholder="filtrer…"></th>
+        <th><select data-f="controllable" title="Pilotable ?"><option value="">tous</option>
+          <option value="1">oui</option><option value="0">non</option></select></th>
+        <th><select data-f="dimmable" title="0-100 % ?"><option value="">tous</option>
+          <option value="1">oui</option><option value="0">non</option></select></th>
+        <th></th>
+      </tr>
+    </thead>
     <tbody id="dev-body"></tbody>
   </table>
 

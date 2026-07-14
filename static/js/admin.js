@@ -124,10 +124,27 @@
     devices = await api("/api/devices");
     renderDevices();
   }
+  let devSort = { key: "", dir: 1 };
+
   function renderDevices() {
     const f = ($("#dev-filter").value || "").toLowerCase();
-    const rows = devices.filter(d =>
+    let rows = devices.filter(d =>
       !f || [d.name, d.room, d.connector_name].join(" ").toLowerCase().includes(f));
+    document.querySelectorAll("#dev-filters [data-f]").forEach(el => {
+      const v = el.value, k = el.dataset.f;
+      if (v === "") return;
+      rows = el.tagName === "SELECT"
+        ? rows.filter(d => (k === "kind" ? d.kind : (d[k] ? "1" : "0")) === v)
+        : rows.filter(d => String(d[k] ?? "").toLowerCase().includes(v.toLowerCase()));
+    });
+    if (devSort.key) {
+      const { key, dir } = devSort;
+      rows.sort((a, b) => {
+        const va = a[key], vb = b[key];
+        if (typeof va === "number" || typeof vb === "number") return ((va || 0) - (vb || 0)) * dir;
+        return String(va ?? "").localeCompare(String(vb ?? ""), "fr", { sensitivity: "base" }) * dir;
+      });
+    }
     $("#dev-body").innerHTML = rows.map(d => `<tr data-id="${d.id}">
       <td><input type="checkbox" data-k="monitored" ${d.monitored ? "checked" : ""}></td>
       <td><input type="text" data-k="name" value="${esc(d.name)}" style="min-width:130px"></td>
@@ -162,6 +179,15 @@
     });
   }
   $("#dev-filter").oninput = renderDevices;
+  document.querySelectorAll("#dev-filters [data-f]").forEach(el => el.oninput = renderDevices);
+  document.querySelectorAll("#dev-head th[data-sort]").forEach(th => th.onclick = () => {
+    const k = th.dataset.sort;
+    devSort = devSort.key === k ? { key: k, dir: -devSort.dir } : { key: k, dir: 1 };
+    document.querySelectorAll("#dev-head .arrow").forEach(a => a.remove());
+    th.insertAdjacentHTML("beforeend",
+      `<span class="arrow">${devSort.dir > 0 ? " ▲" : " ▼"}</span>`);
+    renderDevices();
+  });
 
   function pickIcon(cb) {
     dialog(`<h2 style="margin-top:0">Choisir une icône</h2>

@@ -133,6 +133,14 @@ th { text-align: left; color: var(--muted); font-weight: 600; padding: .4rem .5r
      border-bottom: 1px solid var(--line); }
 td { padding: .35rem .5rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
 tr:hover td { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+/* tri + filtres par colonne (tableau des périphériques) */
+#dev-head th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+#dev-head th[data-sort]:hover { color: var(--txt); }
+#dev-head th .arrow { color: var(--amber); }
+#dev-filters th { padding: .15rem .3rem; }
+#dev-filters input, #dev-filters select {
+  width: 100%; min-width: 64px; font-size: .78rem; padding: .2rem .35rem;
+}
 td .mono { font-family: var(--mono); }
 .lvl-ERROR { color: var(--err); } .lvl-WARNING { color: var(--warn); }
 .lvl-INFO { color: var(--txt); } .lvl-DEBUG { color: var(--muted); }
