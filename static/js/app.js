@@ -95,7 +95,7 @@
       : "";
     if (!page) {
       main.innerHTML = "<h1>Bienvenue</h1><p class='muted'>Aucune page n'est encore définie. " +
-        (me.role === "admin" ? "Créez vos pages dans <a href='/static/admin.html'>Paramètres</a>." :
+        (me.role === "admin" ? "Créez vos pages dans <a href='/static/admin.html#pages'>Paramètres</a>." :
          "Demandez à l'administrateur de créer des pages.") + "</p>";
       return;
     }
@@ -308,8 +308,10 @@
         || `<tr><td colspan="4" class="muted">Journal vide.</td></tr>`;
     };
     $("#j-lvl").onchange = load; $("#j-refresh").onclick = load;
-    $("#j-note").textContent =
-      "La verbosité du journal (verbeux / moyen / erreurs) se règle dans Paramètres.";
+    $("#j-note").innerHTML = me.role === "admin"
+      ? 'La verbosité du journal (verbeux / moyen / erreurs) se règle dans les ' +
+        '<a href="/static/admin.html#general">Réglages généraux</a>.'
+      : "La verbosité du journal (verbeux / moyen / erreurs) se règle dans Paramètres.";
     load();
   }
 

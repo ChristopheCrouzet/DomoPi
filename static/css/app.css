@@ -27,6 +27,9 @@ body {
 }
 a { color: var(--amber); text-decoration: none; }
 button, input, select, textarea { font: inherit; }
+/* L'attribut hidden doit gagner même sur les éléments ayant un display
+   explicite (ex. #banner et #login-view en flex). */
+[hidden] { display: none !important; }
 
 /* ---------------- bandeau système ---------------- */
 #banner {
@@ -53,6 +56,15 @@ button, input, select, textarea { font: inherit; }
 #banner nav a:hover, #banner .bbtn:hover { border-color: var(--line); background: var(--panel-2); }
 #banner nav a.active { border-color: var(--copper); color: var(--amber); }
 #banner .who { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+/* sous-bandeau à onglets (page Paramètres) */
+#tabs { position: sticky; top: 46px; z-index: 40; display: flex; gap: .3rem;
+  padding: .35rem .8rem; background: var(--panel);
+  border-bottom: 1px solid var(--line); overflow-x: auto; }
+#tabs .tab { background: transparent; color: var(--txt);
+  border: 1px solid transparent; border-radius: 6px; padding: .3rem .7rem;
+  cursor: pointer; white-space: nowrap; }
+#tabs .tab:hover { border-color: var(--line); background: var(--panel-2); }
+#tabs .tab.active { border-color: var(--copper); color: var(--amber); }
 
 /* ---------------- structure ---------------- */
 main { padding: 1rem; max-width: 1100px; margin: 0 auto; }

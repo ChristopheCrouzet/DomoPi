@@ -142,8 +142,9 @@
             MQTT choisis à l'installation de DomoPi
             ${cfg.username ? "" : "(le champ utilisateur est actuellement vide)"} ;</li>
         <li>le service sur le Pi : <span class="mono">systemctl status mosquitto</span> ;</li>
-        <li>le <b>Journal</b> (bandeau) : « connexion refusée » = identifiants
-            incorrects, « injoignable » = hôte/port ou service arrêté.</li>
+        <li>le <a href="/#journal" target="_blank"><b>Journal</b></a> :
+            « connexion refusée » = identifiants incorrects,
+            « injoignable » = hôte/port ou service arrêté.</li>
       </ul>
       <p>Après correction, ré-enregistrez le connecteur (il se reconnecte
          aussitôt), attendez quelques secondes puis relancez la découverte.
@@ -548,6 +549,20 @@
   }
   $("#up-icon").onchange = () => upload("#up-icon", "/api/icons/upload");
   $("#up-bg").onchange = () => upload("#up-bg", "/api/backgrounds/upload");
+
+  /* ============================================ onglets */
+  const TABS = ["pages", "devices", "icons", "general"];
+  function showTab(name) {
+    if (!TABS.includes(name)) name = "pages";
+    document.querySelectorAll("#tabs .tab").forEach(b =>
+      b.classList.toggle("active", b.dataset.tab === name));
+    TABS.forEach(t => $("#tab-" + t).hidden = t !== name);
+    if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  }
+  document.querySelectorAll("#tabs .tab").forEach(b =>
+    b.onclick = () => showTab(b.dataset.tab));
+  window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+  showTab(location.hash.slice(1));
 
   /* ============================================ init */
   $("#btn-logout").onclick = async () => {

@@ -16,34 +16,32 @@
   <span class="who" id="who"></span>
   <button class="bbtn" id="btn-logout">Se déconnecter</button>
 </header>
+<nav id="tabs">
+  <button class="tab" data-tab="pages">Pages de visualisation</button>
+  <button class="tab" data-tab="devices">Périphériques</button>
+  <button class="tab" data-tab="icons">Icônes et fonds de page</button>
+  <button class="tab" data-tab="general">Réglages généraux et comptes</button>
+</nav>
 <main>
-  <h2>Réglages généraux</h2>
-  <div class="row">
-    <div><label for="s-title">Titre du site</label><input id="s-title" type="text"></div>
-    <div><label for="s-interval">Intervalle de collecte (secondes)</label>
-      <input id="s-interval" type="number" min="30" step="30"></div>
-    <div><label for="s-retention">Rétention du brut (jours)</label>
-      <input id="s-retention" type="number" min="7"></div>
-  </div>
-  <div class="row">
-    <div><label for="s-jlevel">Verbosité du journal</label>
-      <select id="s-jlevel">
-        <option value="verbose">Verbeux — chaque changement de capteur/actionneur</option>
-        <option value="medium">Moyen — actions principales, warnings et erreurs</option>
-        <option value="errors">Erreurs — absences de réponse et erreurs seulement</option>
-      </select></div>
-    <div><label for="s-jret">Rétention du journal (jours)</label>
-      <input id="s-jret" type="number" min="1"></div>
-    <div class="fix"><button class="btn primary" id="s-save">Enregistrer les réglages</button></div>
-  </div>
 
-  <h2>Contrôleurs domotiques</h2>
-  <div id="conn-list"></div>
-  <div class="row" style="margin-top:.6rem">
-    <div class="fix"><button class="btn" id="conn-add-eedomus">+ Ajouter une box eedomus</button></div>
-    <div class="fix"><button class="btn" id="conn-add-wes">+ Ajouter un WES (MQTT)</button></div>
+  <section id="tab-pages">
+  <h2>Pages de visualisation</h2>
+  <p class="muted">Pages arborescentes : plusieurs pages racines possibles, sous-pages illimitées.
+     Fond paramétrable par page (couleur ou image). L'option « double rendu » permet de définir des
+     widgets différents pour smartphone et pour PC.</p>
+  <div id="pages-tree"></div>
+  <button class="btn" id="page-add-root" style="margin-top:.6rem">+ Nouvelle page racine</button>
+  <div id="widgets-editor" hidden>
+    <h2 id="we-title">Widgets de la page</h2>
+    <table>
+      <thead><tr><th>Ordre</th><th>Type</th><th>Contenu</th><th>Rendu</th><th>Libellé</th><th></th></tr></thead>
+      <tbody id="we-body"></tbody>
+    </table>
+    <button class="btn" id="we-add" style="margin-top:.6rem">+ Ajouter un widget</button>
   </div>
+  </section>
 
+  <section id="tab-devices" hidden>
   <h2>Périphériques</h2>
   <p class="muted">Cochez les périphériques à surveiller (historisés au pas de collecte).
      « Masquer » retire un périphérique du choix des nouveaux widgets (les widgets
@@ -89,20 +87,43 @@
     </thead>
     <tbody id="dev-body"></tbody>
   </table>
+  </section>
 
-  <h2>Pages de visualisation</h2>
-  <p class="muted">Pages arborescentes : plusieurs pages racines possibles, sous-pages illimitées.
-     Fond paramétrable par page (couleur ou image). L'option « double rendu » permet de définir des
-     widgets différents pour smartphone et pour PC.</p>
-  <div id="pages-tree"></div>
-  <button class="btn" id="page-add-root" style="margin-top:.6rem">+ Nouvelle page racine</button>
-  <div id="widgets-editor" hidden>
-    <h2 id="we-title">Widgets de la page</h2>
-    <table>
-      <thead><tr><th>Ordre</th><th>Type</th><th>Contenu</th><th>Rendu</th><th>Libellé</th><th></th></tr></thead>
-      <tbody id="we-body"></tbody>
-    </table>
-    <button class="btn" id="we-add" style="margin-top:.6rem">+ Ajouter un widget</button>
+  <section id="tab-icons" hidden>
+  <h2>Icônes et fonds de page</h2>
+  <div class="row">
+    <div><label>Ajouter une icône (SVG ou PNG)</label><input type="file" id="up-icon" accept=".svg,.png"></div>
+    <div><label>Ajouter un fond de page (JPG, PNG, WebP)</label><input type="file" id="up-bg" accept=".jpg,.jpeg,.png,.webp"></div>
+  </div>
+  <div class="icon-pick" id="icons-gallery" style="margin-top:.6rem"></div>
+  </section>
+
+  <section id="tab-general" hidden>
+  <h2>Réglages généraux</h2>
+  <div class="row">
+    <div><label for="s-title">Titre du site</label><input id="s-title" type="text"></div>
+    <div><label for="s-interval">Intervalle de collecte (secondes)</label>
+      <input id="s-interval" type="number" min="30" step="30"></div>
+    <div><label for="s-retention">Rétention du brut (jours)</label>
+      <input id="s-retention" type="number" min="7"></div>
+  </div>
+  <div class="row">
+    <div><label for="s-jlevel">Verbosité du journal</label>
+      <select id="s-jlevel">
+        <option value="verbose">Verbeux — chaque changement de capteur/actionneur</option>
+        <option value="medium">Moyen — actions principales, warnings et erreurs</option>
+        <option value="errors">Erreurs — absences de réponse et erreurs seulement</option>
+      </select></div>
+    <div><label for="s-jret">Rétention du journal (jours)</label>
+      <input id="s-jret" type="number" min="1"></div>
+    <div class="fix"><button class="btn primary" id="s-save">Enregistrer les réglages</button></div>
+  </div>
+
+  <h2>Contrôleurs domotiques</h2>
+  <div id="conn-list"></div>
+  <div class="row" style="margin-top:.6rem">
+    <div class="fix"><button class="btn" id="conn-add-eedomus">+ Ajouter une box eedomus</button></div>
+    <div class="fix"><button class="btn" id="conn-add-wes">+ Ajouter un WES (MQTT)</button></div>
   </div>
 
   <h2>Utilisateurs</h2>
@@ -115,13 +136,8 @@
       <select id="u-role"><option value="reader">Lecteur</option><option value="admin">Admin</option></select></div>
     <div class="fix"><button class="btn" id="u-add">Créer</button></div>
   </div>
+  </section>
 
-  <h2>Icônes et fonds de page</h2>
-  <div class="row">
-    <div><label>Ajouter une icône (SVG ou PNG)</label><input type="file" id="up-icon" accept=".svg,.png"></div>
-    <div><label>Ajouter un fond de page (JPG, PNG, WebP)</label><input type="file" id="up-bg" accept=".jpg,.jpeg,.png,.webp"></div>
-  </div>
-  <div class="icon-pick" id="icons-gallery" style="margin-top:.6rem"></div>
 </main>
 
 <dialog id="dlg"><div style="padding:1.1rem" id="dlg-body"></div></dialog>
