@@ -210,10 +210,13 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
   #banner .bbtn, #banner nav a { padding: .3rem .45rem; font-size: .88rem; }
   .hide-sm { display: none; }
   .show-sm { display: inline; }
-  /* pages racines du visualiseur : seconde ligne du bandeau en mobile */
-  #root-nav { order: 10; flex-basis: 100%;
-    border-top: 1px solid var(--line); padding-top: .2rem; }
-  #root-nav:empty { display: none; }
+  /* pages racines du visualiseur : véritable second bandeau en portrait.
+     Spécificité #banner #root-nav requise pour battre "#banner nav{flex:1}". */
+  #banner #root-nav { order: 10; flex: 0 0 100%;
+    margin: .3rem -.8rem -.45rem; padding: .3rem .8rem;
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
+  #banner #root-nav:empty { display: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .card { transition: border-color .15s, transform .15s; }

@@ -101,11 +101,13 @@
       return;
     }
     if (!soft) main.innerHTML = "";
-    /* fil d'Ariane */
-    let crumbs = [], p = page;
+    /* fil d'Ariane : uniquement les pages parentes (le titre h1 affiche
+       déjà la page courante — sinon le nom apparaît en double) */
+    let crumbs = [], p = pageById(page.parent_id);
     while (p) { crumbs.unshift(p); p = pageById(p.parent_id); }
-    const crumbHtml = crumbs.map((c, i) => i === crumbs.length - 1 ? c.title
-      : `<a href="#${c.id}">${c.title}</a>`).join(" › ");
+    const crumbHtml = crumbs.length
+      ? crumbs.map(c => `<a href="#${c.id}">${c.title}</a>`).join(" › ") + " ›"
+      : "";
 
     let widgets = await api(`/api/pages/${id}/widgets`);
     if (page.dual_layout)
@@ -114,7 +116,8 @@
 
     const kids = childPages(id);
     const frag = document.createElement("div");
-    frag.innerHTML = `<div class="crumbs">${crumbHtml}</div><h1>${page.title}</h1>`;
+    frag.innerHTML = (crumbHtml ? `<div class="crumbs">${crumbHtml}</div>` : "") +
+                     `<h1>${page.title}</h1>`;
     const grid = document.createElement("div"); grid.className = "grid";
     frag.appendChild(grid);
 
