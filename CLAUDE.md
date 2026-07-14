@@ -91,6 +91,31 @@ $env:DOMOPI_STATIC = "$PWD\static"; $env:DOMOPI_ADMIN_PASSWORD = "devpass123"
 uvicorn domopi.main:app --reload --port 8000
 ```
 
+## Déploiement de test sur le Pi (dev)
+
+Un Raspberry Pi de test (`PI-SERVER`, résolvable sur le LAN) héberge une
+installation DomoPi standard. Pour y pousser le code local et redémarrer :
+
+```powershell
+powershell -File "tools\deploy.ps1"
+```
+
+Le script archive `domopi/` + `static/` + `requirements.txt`, l'envoie en SSH
+(utilisateur `claude`, clé `~/.ssh/domopi_pi`, config dans `~/.ssh/config` —
+avec `KexAlgorithms curve25519-sha256` pour contourner un bug du client
+OpenSSH 9.5 de Windows face à OpenSSH ≥ 10), l'extrait dans `/opt/domopi`,
+réinstalle les dépendances si `requirements.txt` a changé, redémarre le
+service (`sudo systemctl restart domopi`, autorisé sans mot de passe via
+`/etc/sudoers.d/claude-domopi`) et vérifie que l'API répond (401 attendu sur
+`/api/me`). Base, secret et config nginx/mosquitto ne sont jamais touchés.
+
+Accès direct pour diagnostic : `ssh PI-SERVER "journalctl -u domopi -n 50 --no-pager"`.
+
+Ce circuit est réservé au développement ; l'installation propre reste
+`sudo bash install.sh` (à remettre à jour en fin de projet).
+
+## Tests
+
 Il n'y a pas encore de suite de tests automatisés. Les vérifications faites à la
 génération : `bash -n install.sh`, imports des modules, smoke test des routes
 (login, settings, connectors, pages, icons), et validation de `query_series` sur
