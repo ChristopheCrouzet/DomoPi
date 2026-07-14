@@ -46,9 +46,10 @@
 
   <h2>Périphériques</h2>
   <p class="muted">Cochez les périphériques à surveiller (historisés au pas de collecte).
-     Pour les sorties, vous pouvez autoriser ou non leur pilotage, et cocher
-     « 0-100&nbsp;% » pour un pilotage en pourcentage (gradateur de lampe,
-     ouverture partielle de volet). Cliquez sur une icône pour la changer.</p>
+     « Masquer » retire un périphérique du choix des nouveaux widgets (les widgets
+     existants le conservent). Pour les sorties, vous pouvez autoriser ou non leur
+     pilotage, et cocher « 0-100&nbsp;% » pour un pilotage en pourcentage (gradateur
+     de lampe, ouverture partielle de volet). Cliquez sur une icône pour la changer.</p>
   <div class="row" style="max-width:420px">
     <div><label for="dev-filter">Recherche globale</label><input id="dev-filter" type="text" placeholder="nom, pièce, contrôleur…"></div>
   </div>
@@ -58,6 +59,7 @@
     <thead>
       <tr id="dev-head">
         <th data-sort="monitored">Surv.</th>
+        <th data-sort="hidden" title="Masqué : non proposé pour les nouveaux widgets">Masquer</th>
         <th data-sort="name">Nom</th>
         <th data-sort="room">Pièce</th>
         <th data-sort="connector_name">Contrôleur</th>
@@ -69,6 +71,8 @@
       </tr>
       <tr id="dev-filters">
         <th><select data-f="monitored" title="Surveillé ?"><option value="">tous</option>
+          <option value="1">oui</option><option value="0">non</option></select></th>
+        <th><select data-f="hidden" title="Masqué ?"><option value="">tous</option>
           <option value="1">oui</option><option value="0">non</option></select></th>
         <th><input data-f="name" type="text" placeholder="filtrer…"></th>
         <th><input data-f="room" type="text" placeholder="filtrer…"></th>

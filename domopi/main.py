@@ -269,11 +269,12 @@ async def update_device(did: int, request: Request):
         raise HTTPException(404, "Périphérique inconnu")
     conn.execute(
         "UPDATE devices SET name=?, monitored=?, controllable=?, dimmable=?, "
-        "icon_on=?, icon_off=?, unit=?, room=? WHERE id=?",
+        "hidden=?, icon_on=?, icon_off=?, unit=?, room=? WHERE id=?",
         (b.get("name", row["name"]),
          1 if b.get("monitored", row["monitored"]) else 0,
          1 if b.get("controllable", row["controllable"]) and row["kind"] == "actuator" else 0,
          1 if b.get("dimmable", row["dimmable"]) and row["kind"] == "actuator" else 0,
+         1 if b.get("hidden", row["hidden"]) else 0,
          b.get("icon_on", row["icon_on"]), b.get("icon_off", row["icon_off"]),
          b.get("unit", row["unit"]), b.get("room", row["room"]), did))
     conn.commit()

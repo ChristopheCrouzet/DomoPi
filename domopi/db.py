@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS devices(
   monitored INTEGER NOT NULL DEFAULT 0,        -- historisé par le poller
   controllable INTEGER NOT NULL DEFAULT 0,     -- pilotage autorisé (actionneurs)
   dimmable INTEGER NOT NULL DEFAULT 0,         -- pilotage 0-100 % (gradateur, volet)
+  hidden INTEGER NOT NULL DEFAULT 0,           -- non proposé pour les nouveaux widgets
   icon_on TEXT DEFAULT '',
   icon_off TEXT DEFAULT '',
   meta TEXT NOT NULL DEFAULT '{}',             -- JSON (topics MQTT, values eedomus...)
@@ -126,6 +127,8 @@ def init_db():
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(devices)").fetchall()}
     if "dimmable" not in cols:
         conn.execute("ALTER TABLE devices ADD COLUMN dimmable INTEGER NOT NULL DEFAULT 0")
+    if "hidden" not in cols:
+        conn.execute("ALTER TABLE devices ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
     conn.commit()

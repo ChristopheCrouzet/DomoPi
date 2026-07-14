@@ -277,6 +277,8 @@
     }
     $("#dev-body").innerHTML = rows.map(d => `<tr data-id="${d.id}">
       <td><input type="checkbox" data-k="monitored" ${d.monitored ? "checked" : ""}></td>
+      <td><input type="checkbox" data-k="hidden" ${d.hidden ? "checked" : ""}
+           title="Ne plus proposer ce périphérique pour les nouveaux widgets"></td>
       <td><input type="text" data-k="name" value="${esc(d.name)}" style="min-width:130px"></td>
       <td>${esc(d.room)}</td><td>${esc(d.connector_name)}</td>
       <td>${d.kind === "actuator" ? "sortie" : "capteur"}</td>
@@ -290,7 +292,7 @@
            alt="on" title="icône état actif" style="width:26px;height:26px;cursor:pointer;background:var(--panel-2);border-radius:5px;padding:2px">
           <img data-pick="icon_off" src="${d.icon_off ? "/static/icons/" + d.icon_off : ""}"
            alt="off" title="icône état inactif" style="width:26px;height:26px;cursor:pointer;background:var(--panel-2);border-radius:5px;padding:2px"></td>
-      </tr>`).join("") || `<tr><td colspan="9" class="muted">Aucun périphérique.
+      </tr>`).join("") || `<tr><td colspan="10" class="muted">Aucun périphérique.
         Utilisez « Découvrir les périphériques » sur un contrôleur.</td></tr>`;
 
     $("#dev-body").querySelectorAll("tr[data-id]").forEach(tr => {
@@ -428,8 +430,14 @@
   }
 
   function widgetForm(w) {
-    const devOpts = devices.map(d =>
-      `<option value="${d.id}" ${d.id === w.device_id ? "selected" : ""}>${esc(d.name)} (${esc(d.room || d.connector_name)})</option>`).join("");
+    // Périphériques proposés : les non masqués, triés par nom — plus celui
+    // déjà affecté au widget, même masqué (les widgets existants le gardent).
+    const devList = devices
+      .filter(d => !d.hidden || d.id === w.device_id)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), "fr",
+                                                   { sensitivity: "base" }));
+    const devOpts = (list, selected) => list.map(d =>
+      `<option value="${d.id}" ${d.id === selected ? "selected" : ""}>${esc(d.name)} (${esc(d.room || d.connector_name)})</option>`).join("");
     const pageOpts = pages.map(p =>
       `<option value="${p.id}" ${p.id === w.target_page_id ? "selected" : ""}>${esc(p.title)}</option>`).join("");
     dialog(`<h2 style="margin-top:0">${w.id ? "Modifier le widget" : "Nouveau widget"}</h2>
@@ -438,7 +446,9 @@
         <option value="graph" ${w.wtype === "graph" ? "selected" : ""}>Graphe (courbes historiques)</option>
         <option value="pagelink" ${w.wtype === "pagelink" ? "selected" : ""}>Lien vers une page</option>
         <option value="label" ${w.wtype === "label" ? "selected" : ""}>Texte libre</option></select>
-      <div id="wf-dev"><label>Périphérique</label><select id="wf-device">${devOpts}</select></div>
+      <div id="wf-dev"><label>Périphérique</label>
+        <input id="wf-devsearch" type="text" placeholder="Recherche rapide (nom, pièce, contrôleur)…">
+        <select id="wf-device" style="margin-top:.3rem">${devOpts(devList, w.device_id)}</select></div>
       <div id="wf-page"><label>Page cible</label><select id="wf-target">${pageOpts}</select></div>
       <div id="wf-text"><label>Texte</label><input id="wf-textv" type="text" value="${esc(w.options.text || "")}"></div>
       <label>Libellé affiché (optionnel)</label>
@@ -465,12 +475,22 @@
         dlg.querySelector("#wf-range").hidden = t !== "graph";
       };
       dlg.querySelector("#wf-type").onchange = sync; sync();
+      dlg.querySelector("#wf-devsearch").oninput = ev => {
+        const q = ev.target.value.toLowerCase();
+        const sel = dlg.querySelector("#wf-device");
+        const cur = +sel.value;
+        const list = devList.filter(d => !q ||
+          [d.name, d.room, d.connector_name].join(" ").toLowerCase().includes(q));
+        sel.innerHTML = devOpts(list, list.some(d => d.id === cur) ? cur
+                                      : (list[0] || {}).id);
+      };
       dlg.querySelector("#wf-cancel").onclick = () => dlg.close();
       dlg.querySelector("#wf-save").onclick = async () => {
         const t = dlg.querySelector("#wf-type").value;
         const body = { wtype: t, layout: dlg.querySelector("#wf-layout").value,
           sort_order: +dlg.querySelector("#wf-order").value || 0,
-          device_id: (t === "device" || t === "graph") ? +dlg.querySelector("#wf-device").value : null,
+          device_id: (t === "device" || t === "graph")
+            ? (+dlg.querySelector("#wf-device").value || null) : null,
           target_page_id: t === "pagelink" ? +dlg.querySelector("#wf-target").value : null,
           options: { label: dlg.querySelector("#wf-label").value,
                      text: dlg.querySelector("#wf-textv").value,
