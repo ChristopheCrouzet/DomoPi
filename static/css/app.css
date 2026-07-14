@@ -207,6 +207,7 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
   #banner .who { display: none; }
   #banner { flex-wrap: wrap; row-gap: .2rem; }
   #banner .brand-sub { display: none; }
+  #banner .bbtn, #banner nav a { padding: .3rem .45rem; font-size: .88rem; }
   .hide-sm { display: none; }
   .show-sm { display: inline; }
   /* pages racines du visualiseur : seconde ligne du bandeau en mobile */

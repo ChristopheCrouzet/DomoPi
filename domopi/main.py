@@ -26,6 +26,20 @@ BACKGROUNDS_DIR = os.path.join(STATIC_DIR, "backgrounds")
 app = FastAPI(title="DomoPi", docs_url=None, redoc_url=None)
 
 
+@app.middleware("http")
+async def static_cache_control(request: Request, call_next):
+    """Force la revalidation du statique (no-cache + ETag -> 304).
+
+    Sans Cache-Control, Safari mobile applique un cache heuristique et peut
+    garder plusieurs jours d'anciens CSS/JS après une mise à jour.
+    """
+    resp = await call_next(request)
+    p = request.url.path
+    if p == "/" or p.startswith("/static"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.on_event("startup")
 async def startup():
     db.init_db()
