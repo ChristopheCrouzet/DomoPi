@@ -219,6 +219,45 @@ w("radiateur",
       A, 1.6)                                                  # collecteur bas
   + p("M11 42 v-3 M37 42 v-3", G, 1.9))                        # pieds
 
+# --------------------------------------------- radiateur, modes fil pilote
+# Radiateur réduit en hauteur (30->18) pour dégager une zone haute (y<21) où
+# vient se poser le symbole de mode (grossi ~70%) ; pieds et collecteur bas
+# gardent leur position d'origine (fixée sur le bas de l'icône).
+def rad_base(structure, collector):
+    cols = "".join(r_(x - 2.1, 21, 4.2, 18, 2.1, structure, 2) for x in (9, 15, 21, 27, 33, 39))
+    return (cols
+      + p("M11.1 25.5 h1.8 M17.1 25.5 h1.8 M23.1 25.5 h1.8 M29.1 25.5 h1.8 M35.1 25.5 h1.8",
+          G, 1.6)                                                # raccords hauts
+      + p("M11.1 34.5 h1.8 M17.1 34.5 h1.8 M23.1 34.5 h1.8 M29.1 34.5 h1.8 M35.1 34.5 h1.8",
+          collector, 1.6)                                        # collecteur bas
+      + p("M11 42 v-3 M37 42 v-3", G, 1.9))                      # pieds
+
+
+RAD_ON = rad_base(W, A)
+RAD_OFF = rad_base(G, G)
+
+w("radiateur_confort",                                           # soleil ambre
+  RAD_ON
+  + c(24, 10.7, 4.8, A, 2.0, A, ".8")
+  + p("M24 4.58 v-2.38 M24 16.82 v2.38 M17.88 10.7 h-2.38 M30.12 10.7 h2.38", A, 1.8)
+  + p("M19.66 6.36 l-1.68-1.68 M28.34 6.36 l1.68-1.68 "
+      "M19.66 15.04 l-1.68 1.68 M28.34 15.04 l1.68 1.68", A, 1.6))
+w("radiateur_eco",                                                # croissant gris bleuté
+  RAD_ON
+  + p("M28.08 14.78 A7.48 7.48 0 1 1 19.92 6.62 A5.78 5.78 0 0 0 28.08 14.78 Z",
+      G, 1.9, G, ".85"))
+w("radiateur_hors_gel",                                           # cristal de glace gris bleuté
+  RAD_ON
+  + p("M17.37 10.7 H30.63 M20.685 4.954 L27.315 16.446 M27.315 4.954 L20.685 16.446", G, 1.9)
+  + c(17.37, 10.7, .94, G, 0, G) + c(30.63, 10.7, .94, G, 0, G)
+  + c(20.685, 4.954, .94, G, 0, G) + c(27.315, 16.446, .94, G, 0, G)
+  + c(27.315, 4.954, .94, G, 0, G) + c(20.685, 16.446, .94, G, 0, G))
+w("radiateur_off",                                                # radiateur grisé + "OFF" ambre
+  RAD_OFF
+  + r_(6.15, 3.05, 11.05, 15.3, 5.53, A, 2.4)                      # O
+  + p("M20.6 3.05 V18.35 M20.6 3.05 H29.95 M20.6 10.28 H28.25", A, 2.4)  # F
+  + p("M32.5 3.05 V18.35 M32.5 3.05 H41.85 M32.5 10.28 H40.15", A, 2.4))  # F
+
 # ---------------------------------------------------------------- sèche-serviettes
 w("seche_serviettes",
   p("M14 6 V42 M34 6 V42", W, 2.2)                             # colonnes
