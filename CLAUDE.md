@@ -121,13 +121,17 @@ Ce circuit est réservé au développement ; l'installation propre reste
 Il n'y a pas encore de suite de tests automatisés. Les vérifications faites à la
 génération : `bash -n install.sh`, imports des modules, smoke test des routes
 (login, settings, connectors, pages, icons), et validation de `query_series` sur
-20 jours de données simulées. Un bon premier chantier serait d'en faire des
-tests pytest (httpx.AsyncClient + base SQLite temporaire).
+20 jours de données simulées. Les échelles de pilotage ont été validées par des
+scripts smoke jetables (`fastapi.testclient` + base SQLite temporaire recréant
+l'état legacy : migrations, CRUD `/api/scales`, validations 400, affectations,
+capteurs pilotables) — c'est le bon modèle pour le premier chantier : en faire
+une vraie suite pytest.
 
 ## Base de données (db.py)
 
-Tables : `users`, `settings`, `connectors`, `devices`, `measures` (brut),
-`measures_daily` (archives), `pages`, `widgets`, `journal`. `measures` et
+Tables : `users`, `settings`, `connectors`, `scales` (échelles de pilotage),
+`devices`, `measures` (brut), `measures_daily` (archives), `pages`, `widgets`,
+`journal`. `measures` et
 `measures_daily` sont en `WITHOUT ROWID` (clé composite device+temps).
 
 ### Logique d'agrégation — `query_series(device_id, t_from, t_to)`
@@ -172,30 +176,51 @@ planche contact avec cairosvg + Pillow avant livraison (vérifier symétrie,
 chevauchements, lisibilité à 42 px). Les icônes ajoutées par l'utilisateur via
 l'upload ne sont pas concernées et sont préservées par l'installeur (`cp -n`).
 
-## Pilotage 0-100 % (attribut `dimmable`)
+## Pilotage proportionnel : échelles (`scales` + `devices.scale_id`)
 
-`devices.dimmable` (ajouté par migration dans `init_db()`) marque les sorties
-pilotables en pourcentage : gradateurs de lampes, ouverture partielle de volets.
+Le pilotage proportionnel repose sur des **échelles** réutilisables (table
+`scales`), affectées aux périphériques via `devices.scale_id` (NULL =
+tout-ou-rien). `controllable` et `scale_id` sont autorisés aussi sur les
+**capteurs** : les capteurs virtuels d'une box eedomus (consignes, modes) se
+pilotent comme des sorties. Une échelle définit : `unit` (optionnelle,
+**recopiée** dans `devices.unit` par l'admin au moment du choix de l'échelle —
+simple transfert, pas de liaison), plage `vmin`/`vmax`, `step` (cran du curseur **et**
+format d'affichage : 10 → « 20 », 0.1 → « 19.5 »), `hide_slider` (boutons
+seuls), `send_delay_s` (tempo d'auto-validation du curseur), `toggle_click`
+(1 = clic court marche/arrêt + double-clic/appui long pour le réglage ;
+0 = le clic ouvre directement le réglage — consignes de chauffage, modes) et
+`stops` (JSON, 0 ou 2 à 20 valeurs `{value, label?, icon?}`, triées côté
+serveur). Exemples : gradateur 0-100 %, consigne 12-25 °C par 0.5 avec boutons
+12/18/19/20/21/23, mode radiateur 0-3 avec 4 boutons texte+icône.
 
-- **Découverte** : pré-coché par heuristique — eedomus si `usage_name` contient
-  volet/shutter/variateur/dimmer/store ; WES/HA si la config discovery expose
-  `set_position_topic` ou `brightness_command_topic`. Modifiable dans l'admin
-  (colonne « 0-100 % », sorties uniquement, forcé à 0 côté serveur pour un
-  capteur).
-- **Envoi** : la valeur transite par `POST /api/devices/{id}/set` comme les
-  ordres on/off. eedomus : `periph.value` accepte directement 0-100.
-  WES/MQTT : `set_value()` route une valeur numérique vers
-  `set_position_topic` (volet) ou `brightness_command_topic` (gradateur) si
-  présents, sinon `command_topic` ; on/off restent sur `command_topic` avec
-  `payload_on`/`payload_off`.
+- **Admin** : onglet « Paramètres » (CRUD `/api/scales`, admin) ; affectation
+  dans l'onglet « Périphériques », colonne « Échelle ». Suppression d'une
+  échelle → les périphériques repassent à NULL.
+- **Migration** (`init_db()`) : colonne `scale_id` ajoutée, et — une seule
+  fois, marqué par le réglage `default_scale_id` — création d'une échelle
+  « 0 - 100 % » (boutons 0/25/50/75/100) affectée aux devices `dimmable=1`
+  (avec unité `%` posée si vide, pour préserver l'affichage).
+- **Découverte** : `dimmable` reste l'heuristique (eedomus : `usage_name`
+  contient volet/shutter/variateur/dimmer/store ; WES/HA : présence de
+  `set_position_topic`/`brightness_command_topic`) — un **nouveau** périphérique
+  détecté proportionnel reçoit l'échelle `default_scale_id` (et son unité si le
+  connecteur n'en fournit pas) ; la re-découverte ne touche jamais `scale_id`
+  et ne vide jamais une unité renseignée quand le connecteur n'en fournit pas.
+- **Envoi** : inchangé, par `POST /api/devices/{id}/set`. eedomus :
+  `periph.value` accepte le numérique (on/off → 100/0). WES/MQTT :
+  `set_value()` route une valeur numérique vers `set_position_topic` (volet)
+  ou `brightness_command_topic` (gradateur) si présents, sinon
+  `command_topic` ; on/off restent sur `command_topic` avec
+  `payload_on`/`payload_off`. Les connecteurs ne lisent pas l'échelle.
 - **Lecture** : pour un cover HA sans `state_topic`, le connecteur utilise
   `position_topic` comme état (et s'abonne aux deux).
-- **UI** (`app.js`) : carte d'un périphérique `dimmable` -> clic ouvre un
-  curseur 0-100 % (dialog `openDimmer`) avec raccourcis 0 % / 100 %. Icône :
-  si 0 < valeur < 100, superposition icône off + icône on découpée par
-  `clip-path: inset(calc(100% - var(--pct)) 0 0 0)` (classe `.stack`,
-  css dans app.css) — l'icône « on » se révèle depuis le bas à hauteur du
-  pourcentage. La valeur s'affiche en `%`.
+- **UI** (`app.js`) : `GET /api/devices` embarque l'objet `scale` (jamais la
+  config du connecteur). Dialog `openScale` : curseur borné/cranté + boutons
+  des `stops` (grille `.scale-btns`, jusqu'à 20). Sur la tuile : si la valeur
+  courante correspond à un stop (au demi-cran près), son icône/texte remplace
+  ceux du périphérique ; sinon, état partiel affiché par superposition icône
+  off + icône on découpée par `clip-path: inset(calc(100% - var(--pct)) 0 0 0)`
+  (classe `.stack`) — `--pct` = position normalisée sur la plage de l'échelle.
 
 ## Collecte (poller.py)
 
@@ -263,6 +288,42 @@ Responsive : bascule mobile/desktop au seuil **700 px** (constante répétée da
 `app.js:isMobile()` et les media queries CSS — garder les deux cohérents).
 Le « double rendu » d'une page filtre les widgets par `layout`
 (`both`/`mobile`/`desktop`).
+
+### Conventions d'interface (issues des retours utilisateur — à préserver)
+
+- **Tuiles uniformes** : toutes les tuiles d'une page (périphériques, liens de
+  page) ont la même hauteur fixe (`.grid > .card`, 122 px) ; nom et valeur en
+  `nowrap` + ellipse ; « sans réponse » est un badge en surimpression (absolu,
+  haut-droite) pour ne pas modifier la hauteur. Les textes libres (`.wide`) et
+  les graphes gardent leur hauteur propre. Mobile : colonnes
+  `minmax(86px, 1fr)` pour garantir **au moins 3 colonnes** (≥ 9 tuiles
+  visibles) dès 320 px de large.
+- **Niveau visuel de consigne** : tuile pilotable dont l'échelle affiche la
+  barre → classe `.lvl` + variable `--lvl` (position min→max en %) : la tuile
+  s'éclaircit depuis le bas (dégradé blanc ~10 % d'opacité). Rien pour les
+  échelles « boutons seuls ».
+- **Ordre d'affichage** : tuiles de sous-pages et widgets partagent la même
+  numérotation (fusion triée dans `app.js:renderPage` ; à ordre égal, la
+  sous-page passe en premier). Le « + Ajouter un widget » pré-remplit
+  « ordre max + 1 » calculé **sur les widgets seuls** : ne pas y intégrer les
+  sous-pages — l'utilisateur place ses dossiers très en début (-20) ou très en
+  fin (+20) et préfère une collision d'ordre (sans gravité) à de gros sauts de
+  numérotation.
+- **En-têtes collants** (admin, tableau des périphériques) : les deux lignes
+  d'en-tête (tri + filtres) sont `position: sticky` avec des offsets en dur
+  dans app.css (84 px / 113 px), calés sur le bandeau (46 px) + les onglets,
+  avec 1-3 px de recouvrement pour éviter tout jour — à ajuster si la hauteur
+  du bandeau change.
+- **Mémorisations `localStorage` (admin)** : `domopi_dev_filters` = filtres de
+  colonnes du tableau des périphériques, restaurés à l'ouverture (la recherche
+  globale, elle, repart volontairement vide) ; `domopi_last_icon` = dernière
+  icône choisie — le dialogue de choix propose un bouton « Reprendre la
+  dernière icône » en bas à droite, avec `autofocus` (Entrée valide), et
+  l'icône est surlignée/centrée dans la galerie (usage : équiper une série de
+  périphériques de la même icône).
+- **Capteurs virtuels pilotables** : « Pilotable » et « Échelle » sont offerts
+  pour tous les périphériques, capteurs compris (consignes/modes eedomus) ;
+  seul `dimmable` reste réservé aux sorties côté serveur.
 
 ## Points d'attention Pi 2/3
 

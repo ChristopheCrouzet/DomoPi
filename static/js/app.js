@@ -121,15 +121,25 @@
       widgets = widgets.filter(w => w.layout === "both" || w.layout === (isMobile() ? "mobile" : "desktop"));
     currentWidgets = widgets;
 
-    const kids = childPages(id);
     const frag = document.createElement("div");
     frag.innerHTML = (crumbHtml ? `<div class="crumbs">${crumbHtml}</div>` : "") +
                      `<h1>${page.title}</h1>`;
     const grid = document.createElement("div"); grid.className = "grid";
     frag.appendChild(grid);
 
-    for (const k of kids) grid.appendChild(linkCard(k.title, k.icon, () => openPage(k.id)));
-    for (const w of widgets) {
+    // Tuiles de sous-pages et widgets partagent le même ordre d'affichage
+    // (à ordre égal, les sous-pages passent en premier).
+    const items = [
+      ...childPages(id).map(k => ({ sort: k.sort_order || 0, kid: k })),
+      ...widgets.map(w => ({ sort: w.sort_order || 0, w })),
+    ].sort((a, b) => a.sort - b.sort);
+    for (const it of items) {
+      if (it.kid) {
+        const k = it.kid;
+        grid.appendChild(linkCard(k.title, k.icon, () => openPage(k.id)));
+        continue;
+      }
+      const w = it.w;
       if (w.wtype === "pagelink" && w.target_page_id)
         grid.appendChild(linkCard(w.options.label || w.target_title || "Page",
                                   w.target_icon || "",
@@ -221,25 +231,46 @@
   }
 
   /* ------------------------------------------------ widget périphérique */
+  /* Format d'une valeur au pas de l'échelle (10 -> "20", 0.1 -> "19.5"). */
+  const fmtScale = (v, step) => {
+    const dec = (String(step ?? 1).split(".")[1] || "").length;
+    return (+v).toFixed(dec);
+  };
+
   function deviceCard(w) {
     const d = devices[w.device_id] || {};
     const isActuator = d.kind === "actuator";
+    // Échelle aussi sur un capteur virtuel pilotable (consigne, mode...) —
+    // et son affichage (icône/texte des valeurs) vaut même sans pilotage.
+    const sc = d.scale || null;
     const num = parseFloat(String(d.last_value ?? "").replace(",", "."));
-    // Pourcentage 0-100 pour les périphériques gradables (lampe à variateur,
-    // volet à ouverture partielle...)
-    const pct = isActuator && d.dimmable && !isNaN(num)
-      ? Math.max(0, Math.min(100, num)) : null;
+    // Position 0-100 % de la valeur sur l'échelle de pilotage (gradateur,
+    // ouverture de volet, consigne de chauffage...)
+    const pct = sc && !isNaN(num)
+      ? Math.max(0, Math.min(100, (num - sc.vmin) / (sc.vmax - sc.vmin) * 100)) : null;
+    // Valeur de la série correspondant à la valeur courante (au demi-cran
+    // près) : son icône et son texte remplacent alors ceux du périphérique.
+    const stop = sc && !isNaN(num)
+      ? (sc.stops || []).find(s => Math.abs(num - s.value) <= (sc.step || 1) / 2) : null;
     const on = pct != null ? pct > 0 : isOn(d.last_value);
     const dim = isActuator && !on;
     const stale = d.last_seen && (Date.now() / 1000 - d.last_seen > 3 * 3600);
     const c = document.createElement("div");
     c.className = "card" + (d.controllable ? " clickable" : "");
     if (w.id) c.dataset.wid = w.id;
+    // Tuile pilotable sur échelle (avec barre) : la tuile s'éclaircit depuis
+    // le bas à hauteur de la consigne — sombre au mini, claire au maxi.
+    if (sc && d.controllable && !sc.hide_slider && pct != null) {
+      c.classList.add("lvl");
+      c.style.setProperty("--lvl", pct.toFixed(1) + "%");
+    }
 
     // Icône : pour un état partiel (0 < pct < 100), l'icône "on" est révélée
     // depuis le bas à hauteur du pourcentage, superposée à l'icône "off".
     let iconHtml = "";
-    if (isActuator && pct != null && pct > 0 && pct < 100 && d.icon_on && d.icon_off) {
+    if (stop && stop.icon) {
+      iconHtml = `<div class="icon"><img src="/static/icons/${stop.icon}" alt=""></div>`;
+    } else if (sc && pct != null && pct > 0 && pct < 100 && d.icon_on && d.icon_off) {
       iconHtml = `<div class="icon"><span class="stack" style="--pct:${pct}%">
         <img src="/static/icons/${d.icon_off}" alt="">
         <img class="top" src="/static/icons/${d.icon_on}" alt=""></span></div>`;
@@ -249,7 +280,9 @@
         : (d.icon_on || d.icon_off);
       if (icon) iconHtml = `<div class="icon"><img src="/static/icons/${icon}" alt=""></div>`;
     }
-    const valueHtml = pct != null ? `${pct} %`
+    const valueHtml = sc && !isNaN(num)
+      ? (stop && stop.label ? stop.label
+         : fmtScale(num, sc.step) + (d.unit ? " " + d.unit : ""))
       : `${d.last_value ?? "—"}${d.unit ? " " + d.unit : ""}`;
     c.innerHTML = iconHtml +
       `<div class="value ${dim ? "off" : ""}">${valueHtml}</div>
@@ -266,11 +299,18 @@
           ack(d.id);
         } catch (e) { toast("Échec : " + e.message); }
       };
-      if (d.dimmable) {
+      if (sc) {
+        const openDetails = () => openScale(d, sc, !isNaN(num) ? num : sc.vmin);
+        if (!sc.toggle_click) {
+          // Échelle « consigne » (chauffage, mode...) : le clic ouvre le réglage.
+          c.title = "Cliquer pour régler";
+          c.onclick = openDetails;
+          c.onkeydown = e => { if (e.key === "Enter") openDetails(); };
+          return c;
+        }
         // Clic/appui court : marche-arrêt. Double-clic (PC) ou appui long
-        // (mobile, avec micro-vibration et zoom du cadre) : réglage 0-100 %.
-        c.title = "Clic : marche/arrêt · double-clic ou appui long : réglage 0-100 %";
-        const openDetails = () => openDimmer(d, pct ?? (on ? 100 : 0));
+        // (mobile, avec micro-vibration et zoom du cadre) : réglage sur l'échelle.
+        c.title = "Clic : marche/arrêt · double-clic ou appui long : réglage";
         let pressTimer = null, longFired = false, clickTimer = null;
         c.onpointerdown = e => {
           if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -306,23 +346,38 @@
     return c;
   }
 
-  /* Curseur 0-100 % pour gradateurs et ouvertures partielles */
-  function openDimmer(d, current) {
+  /* Réglage sur échelle : curseur borné/cranté (optionnel) + boutons de la
+     série de valeurs (texte et icône optionnels). Gradateurs, volets,
+     consignes de chauffage, modes... */
+  function openScale(d, sc, current) {
     const dlg = $("#zoom-dlg"), body = $("#zoom-body");
+    const unit = d.unit ? " " + d.unit : "";
+    const fmt = v => fmtScale(v, sc.step) + unit;
+    const snap = v => {
+      v = Math.max(sc.vmin, Math.min(sc.vmax, +v || 0));
+      return Math.round((v - sc.vmin) / sc.step) * sc.step + sc.vmin;
+    };
+    current = snap(current);
+    const delayS = sc.send_delay_s == null ? 1.5 : Math.max(0, +sc.send_delay_s);
+    const stops = sc.stops || [];
     body.innerHTML = `<button class="dlg-x" id="dim-close" title="Fermer">✕</button>
       <h2 style="margin-top:0">${d.name}</h2>
       <div class="value" id="dim-val" style="text-align:center;font-size:1.6rem;
-           font-family:var(--mono);margin:.2rem 0 .5rem">${current} %</div>
-      <input type="range" id="dim-slider" min="0" max="100" step="1"
-             value="${current}" style="width:100%;height:2.4rem;touch-action:none">
+           font-family:var(--mono);margin:.2rem 0 .5rem">${fmt(current)}</div>
+      ${sc.hide_slider ? "" : `
+      <input type="range" id="dim-slider" min="${sc.vmin}" max="${sc.vmax}"
+             step="${sc.step}" value="${current}"
+             style="width:100%;height:2.4rem;touch-action:none">
       <div style="display:flex;justify-content:space-between" class="muted">
-        <span>0 %</span><span>100 %</span></div>
-      <div class="row" style="margin-top:.7rem">
-        ${[0, 25, 50, 75, 100].map(p =>
-          `<button class="btn" data-pct="${p}" style="flex:1;min-width:0;padding:.45rem 0">${p}</button>`).join("")}
-      </div>
-      <p class="muted" style="margin:.6rem 0 0;font-size:.8rem">La consigne part
-        automatiquement 1,5&nbsp;s après le relâchement du curseur.</p>`;
+        <span>${fmt(sc.vmin)}</span><span>${fmt(sc.vmax)}</span></div>`}
+      ${stops.length ? `<div class="scale-btns">${stops.map(s =>
+        `<button class="btn" data-v="${s.value}" title="${fmt(s.value)}">
+           ${s.icon ? `<img src="/static/icons/${s.icon}" alt="">` : ""}
+           <span>${s.label || fmtScale(s.value, sc.step)}</span></button>`).join("")}
+      </div>` : ""}
+      ${sc.hide_slider || !delayS ? "" : `<p class="muted"
+        style="margin:.6rem 0 0;font-size:.8rem">La consigne part automatiquement
+        ${String(delayS).replace(".", ",")}&nbsp;s après le relâchement du curseur.</p>`}`;
     const slider = $("#dim-slider");
     let sendTimer = null;
     const send = async v => {
@@ -330,24 +385,27 @@
       try {
         await api(`/api/devices/${d.id}/set`, { method: "POST",
           body: JSON.stringify({ value: String(v) }) });
-        toast(`${d.name} → ${v} %`);
+        toast(`${d.name} → ${fmt(v)}`);
         dlg.close();
         ack(d.id);
       } catch (e) { toast("Échec : " + e.message); }
     };
-    slider.oninput = () => {              // en cours de glissement : annule l'envoi
-      clearTimeout(sendTimer); sendTimer = null;
-      $("#dim-val").textContent = slider.value + " %";
-    };
-    slider.onchange = () => {             // relâchement : envoi différé de 1,5 s
-      clearTimeout(sendTimer);
-      $("#dim-val").textContent = slider.value + " % …";
-      sendTimer = setTimeout(() => send(slider.value), 1500);
-    };
-    body.querySelectorAll("[data-pct]").forEach(b =>
-      b.onclick = () => { slider.value = b.dataset.pct;
-                          $("#dim-val").textContent = b.dataset.pct + " %";
-                          send(b.dataset.pct); });
+    if (slider) {
+      slider.oninput = () => {            // en cours de glissement : annule l'envoi
+        clearTimeout(sendTimer); sendTimer = null;
+        $("#dim-val").textContent = fmt(slider.value);
+      };
+      slider.onchange = () => {           // relâchement : envoi (différé si tempo)
+        clearTimeout(sendTimer);
+        if (!delayS) return send(slider.value);
+        $("#dim-val").textContent = fmt(slider.value) + " …";
+        sendTimer = setTimeout(() => send(slider.value), delayS * 1000);
+      };
+    }
+    body.querySelectorAll("[data-v]").forEach(b =>
+      b.onclick = () => { if (slider) slider.value = b.dataset.v;
+                          $("#dim-val").textContent = fmt(b.dataset.v);
+                          send(b.dataset.v); });
     $("#dim-close").onclick = () => { clearTimeout(sendTimer); dlg.close(); };
     dlg.showModal();
   }

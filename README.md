@@ -93,11 +93,22 @@ Tout se fait dans **Paramètres** (bandeau supérieur, compte admin).
   *verbeux* (chaque changement), *moyen* (actions + warnings + erreurs),
   *erreurs* (absences de réponse et erreurs seules). Purge automatique
   **hebdomadaire** au-delà de la rétention configurée.
-- **Pilotage** : clic sur une sortie pilotable = bascule marche/arrêt. Si
-  l'attribut « 0-100 % » est coché (gradateur de lampe, ouverture partielle de
-  volet), le clic ouvre un curseur de réglage en pourcentage, et l'icône révèle
-  visuellement le niveau partiel (icône « on » découpée à hauteur du
-  pourcentage, superposée à l'icône « off »).
+- **Pilotage** : clic sur une sortie pilotable = bascule marche/arrêt. Si une
+  **échelle** est affectée à la sortie (gradateur de lampe, ouverture partielle
+  de volet, consigne de chauffage, mode de radiateur…), un double-clic ou un
+  appui long ouvre le réglage : curseur borné et cranté selon l'échelle, plus
+  une série de boutons de valeurs prédéfinies (avec texte et icône optionnels).
+  Les échelles se définissent dans Paramètres → onglet « Paramètres » : unité
+  optionnelle (recopiée sur le périphérique au moment du choix de l'échelle),
+  plage min/max, résolution, tempo d'auto-validation du curseur, barre
+  masquable, et 2 à 20 valeurs. Les capteurs virtuels d'une box (consignes,
+  modes eedomus…) peuvent aussi être marqués pilotables et recevoir une
+  échelle. Si la valeur courante correspond à une valeur de la série,
+  son icône et son texte s'affichent sur la tuile ; sinon, pour un état
+  partiel, l'icône révèle visuellement le niveau (icône « on » découpée à
+  hauteur de la position sur l'échelle, superposée à l'icône « off »). Une
+  échelle peut aussi remplacer la bascule marche/arrêt du clic court par
+  l'ouverture directe du réglage (utile pour les consignes).
 - **Comptes** : un administrateur, plus des comptes « lecteur » (consultation et
   pilotage des sorties autorisées, sans accès aux réglages).
 

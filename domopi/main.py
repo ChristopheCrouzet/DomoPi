@@ -233,15 +233,26 @@ async def discover(cid: int, request: Request):
             if found:
                 break
     conn = db.get_conn()
+    # Échelle affectée d'office aux nouveaux périphériques détectés « proportionnels »
+    # (l'échelle par défaut peut avoir été supprimée : on vérifie qu'elle existe).
+    ds = conn.execute("SELECT id, unit FROM scales WHERE id="
+                      "(SELECT value FROM settings WHERE key='default_scale_id')").fetchone()
+    default_sid = ds["id"] if ds else None
+    default_unit = ds["unit"] if ds else ""
     for d in found:
+        unit = d.get("unit", "") or (default_unit if d.get("dimmable") else "")
+        # La re-découverte ne vide jamais une unité renseignée (à la main ou
+        # via l'unité d'une échelle) quand le connecteur n'en fournit pas.
         conn.execute(
-            "INSERT INTO devices(connector_id,external_id,name,kind,unit,room,meta,dimmable) "
-            "VALUES(?,?,?,?,?,?,?,?) "
+            "INSERT INTO devices(connector_id,external_id,name,kind,unit,room,meta,"
+            "dimmable,scale_id) VALUES(?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(connector_id,external_id) DO UPDATE SET "
-            "unit=excluded.unit, room=excluded.room, meta=excluded.meta",
-            (cid, d["external_id"], d["name"], d["kind"], d.get("unit", ""),
+            "unit=CASE WHEN excluded.unit='' THEN unit ELSE excluded.unit END, "
+            "room=excluded.room, meta=excluded.meta",
+            (cid, d["external_id"], d["name"], d["kind"], unit,
              d.get("room", ""), json.dumps(d.get("meta", {})),
-             1 if d.get("dimmable") else 0))
+             1 if d.get("dimmable") else 0,
+             default_sid if d.get("dimmable") else None))
         # Le nom n'est pas écrasé à la re-découverte (renommages utilisateur),
         # sauf s'il contient U+FFFD : nom corrompu par l'ancien bug d'encodage.
         conn.execute(
@@ -261,13 +272,88 @@ async def discover(cid: int, request: Request):
     return resp
 
 
+# ================================================================ échelles
+def _scale_row(b: dict) -> tuple:
+    """Valide le corps d'une échelle et renvoie le tuple pour INSERT/UPDATE."""
+    try:
+        name = str(b.get("name", "")).strip()
+        unit = str(b.get("unit") or "").strip()
+        vmin = float(b.get("vmin", 0))
+        vmax = float(b.get("vmax", 100))
+        step = float(b.get("step", 1))
+        delay = float(b.get("send_delay_s", 1.5))
+        stops = [{"value": float(s.get("value")),
+                  "label": str(s.get("label") or "").strip(),
+                  "icon": str(s.get("icon") or "")}
+                 for s in (b.get("stops") or [])]
+    except (TypeError, ValueError, AttributeError):
+        raise HTTPException(400, "Données d'échelle invalides")
+    if not name:
+        raise HTTPException(400, "Nom de l'échelle requis")
+    if vmax <= vmin:
+        raise HTTPException(400, "Le maximum doit être supérieur au minimum")
+    if step <= 0:
+        raise HTTPException(400, "La résolution doit être positive")
+    if stops and not 2 <= len(stops) <= 20:
+        raise HTTPException(400, "La série doit compter de 2 à 20 valeurs (ou aucune)")
+    stops.sort(key=lambda s: s["value"])
+    return (name, unit, vmin, vmax, step, 1 if b.get("hide_slider") else 0,
+            max(0.0, min(delay, 30.0)), 1 if b.get("toggle_click", True) else 0,
+            json.dumps(stops))
+
+
+@app.get("/api/scales")
+async def list_scales(request: Request):
+    auth.require_admin(request)
+    rows = db.get_conn().execute("SELECT * FROM scales ORDER BY name").fetchall()
+    return [dict(r) | {"stops": json.loads(r["stops"] or "[]")} for r in rows]
+
+
+@app.post("/api/scales")
+async def create_scale(request: Request):
+    auth.require_admin(request)
+    vals = _scale_row(await request.json())
+    cur = db.get_conn().execute(
+        "INSERT INTO scales(name,unit,vmin,vmax,step,hide_slider,send_delay_s,"
+        "toggle_click,stops) VALUES(?,?,?,?,?,?,?,?,?)", vals)
+    db.get_conn().commit()
+    journal.info("scales", f"échelle créée : {vals[0]}")
+    return {"id": cur.lastrowid}
+
+
+@app.put("/api/scales/{sid}")
+async def update_scale(sid: int, request: Request):
+    auth.require_admin(request)
+    vals = _scale_row(await request.json())
+    db.get_conn().execute(
+        "UPDATE scales SET name=?, unit=?, vmin=?, vmax=?, step=?, hide_slider=?, "
+        "send_delay_s=?, toggle_click=?, stops=? WHERE id=?", vals + (sid,))
+    db.get_conn().commit()
+    return {"ok": True}
+
+
+@app.delete("/api/scales/{sid}")
+async def delete_scale(sid: int, request: Request):
+    auth.require_admin(request)
+    conn = db.get_conn()
+    conn.execute("UPDATE devices SET scale_id=NULL WHERE scale_id=?", (sid,))
+    conn.execute("DELETE FROM scales WHERE id=?", (sid,))
+    conn.commit()
+    journal.info("scales", f"échelle supprimée : {sid}")
+    return {"ok": True}
+
+
 # ================================================================ périphériques
 @app.get("/api/devices")
 async def list_devices(request: Request, monitored: int | None = None):
     auth.require_user(request)
     q = ("SELECT d.*, c.name AS connector_name, c.type AS connector_type, "
-         "c.config AS connector_config "
-         "FROM devices d JOIN connectors c ON c.id=d.connector_id")
+         "c.config AS connector_config, s.name AS s_name, s.unit AS s_unit, "
+         "s.vmin AS s_vmin, s.vmax AS s_vmax, s.step AS s_step, "
+         "s.hide_slider AS s_hide, s.send_delay_s AS s_delay, "
+         "s.toggle_click AS s_toggle, s.stops AS s_stops "
+         "FROM devices d JOIN connectors c ON c.id=d.connector_id "
+         "LEFT JOIN scales s ON s.id=d.scale_id")
     if monitored is not None:
         q += f" WHERE d.monitored={1 if monitored else 0}"
     rows = db.get_conn().execute(q + " ORDER BY d.room, d.name").fetchall()
@@ -281,6 +367,21 @@ async def list_devices(request: Request, monitored: int | None = None):
         except (ValueError, TypeError):
             lrs = 10
         d["live_refresh_s"] = max(0, lrs)
+        # Échelle de pilotage embarquée (utilisée par le visualiseur).
+        s = {k: d.pop("s_" + k, None)
+             for k in ("name", "unit", "vmin", "vmax", "step", "hide", "delay",
+                       "toggle", "stops")}
+        if d.get("scale_id") and s["vmin"] is not None:
+            try:
+                stops = json.loads(s["stops"] or "[]")
+            except ValueError:
+                stops = []
+            d["scale"] = {"id": d["scale_id"], "name": s["name"], "unit": s["unit"],
+                          "vmin": s["vmin"], "vmax": s["vmax"], "step": s["step"],
+                          "hide_slider": s["hide"], "send_delay_s": s["delay"],
+                          "toggle_click": s["toggle"], "stops": stops}
+        else:
+            d["scale"] = None
         out.append(d)
     return out
 
@@ -293,13 +394,27 @@ async def update_device(did: int, request: Request):
     row = conn.execute("SELECT * FROM devices WHERE id=?", (did,)).fetchone()
     if not row:
         raise HTTPException(404, "Périphérique inconnu")
+    # Échelle de pilotage : l'échelle doit exister. Autorisée aussi sur les
+    # capteurs (capteurs virtuels pilotables d'une box : consignes, modes...).
+    sid = b.get("scale_id", row["scale_id"])
+    if sid in ("", None):
+        sid = None
+    else:
+        try:
+            sid = int(sid)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Échelle invalide")
+        if not conn.execute("SELECT 1 FROM scales WHERE id=?", (sid,)).fetchone():
+            raise HTTPException(400, "Échelle inconnue")
     conn.execute(
         "UPDATE devices SET name=?, monitored=?, controllable=?, dimmable=?, "
-        "hidden=?, icon_on=?, icon_off=?, unit=?, room=? WHERE id=?",
+        "scale_id=?, hidden=?, icon_on=?, icon_off=?, unit=?, room=? WHERE id=?",
         (b.get("name", row["name"]),
          1 if b.get("monitored", row["monitored"]) else 0,
-         1 if b.get("controllable", row["controllable"]) and row["kind"] == "actuator" else 0,
+         # pilotable aussi pour un capteur (capteur virtuel d'une box)
+         1 if b.get("controllable", row["controllable"]) else 0,
          1 if b.get("dimmable", row["dimmable"]) and row["kind"] == "actuator" else 0,
+         sid,
          1 if b.get("hidden", row["hidden"]) else 0,
          b.get("icon_on", row["icon_on"]), b.get("icon_off", row["icon_off"]),
          b.get("unit", row["unit"]), b.get("room", row["room"]), did))

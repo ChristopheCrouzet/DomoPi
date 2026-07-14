@@ -1,7 +1,8 @@
 /* DomoPi — interface d'administration. */
 (function () {
   const $ = s => document.querySelector(s);
-  let icons = [], backgrounds = [], devices = [], pages = [], currentWePage = null;
+  let icons = [], backgrounds = [], devices = [], pages = [], scales = [],
+      currentWePage = null;
 
   const api = async (url, opts) => {
     const r = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
@@ -257,9 +258,31 @@
   /* ============================================ périphériques */
   async function loadDevices() {
     devices = await api("/api/devices");
+    // Nom d'échelle à plat pour le tri et l'affichage de la colonne « Échelle ».
+    devices.forEach(d =>
+      d.scale_name = (scales.find(s => s.id === d.scale_id) || {}).name || "");
     renderDevices();
+    renderScales();      // compteurs « n périphériques » des cartes d'échelles
   }
   let devSort = { key: "", dir: 1 };
+
+  /* Filtres de colonnes mémorisés entre sessions (pas la recherche globale). */
+  const FILTERS_KEY = "domopi_dev_filters";
+  function saveFilters() {
+    const o = {};
+    document.querySelectorAll("#dev-filters [data-f]").forEach(el => {
+      if (el.value) o[el.dataset.f] = el.value;
+    });
+    localStorage.setItem(FILTERS_KEY, JSON.stringify(o));
+  }
+  function restoreFilters() {
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem(FILTERS_KEY)) || {}; } catch { }
+    document.querySelectorAll("#dev-filters [data-f]").forEach(el => {
+      el.value = o[el.dataset.f] ?? "";
+      if (el.tagName === "SELECT" && el.selectedIndex < 0) el.value = "";
+    });
+  }
 
   function renderDevices() {
     const f = ($("#dev-filter").value || "").toLowerCase();
@@ -268,9 +291,13 @@
     document.querySelectorAll("#dev-filters [data-f]").forEach(el => {
       const v = el.value, k = el.dataset.f;
       if (v === "") return;
-      rows = el.tagName === "SELECT"
-        ? rows.filter(d => (k === "kind" ? d.kind : (d[k] ? "1" : "0")) === v)
-        : rows.filter(d => String(d[k] ?? "").toLowerCase().includes(v.toLowerCase()));
+      rows = rows.filter(d => {
+        if (el.tagName !== "SELECT")
+          return String(d[k] ?? "").toLowerCase().includes(v.toLowerCase());
+        if (k === "kind") return d.kind === v;
+        if (k === "scale_id") return v === "none" ? !d.scale_id : d.scale_id === +v;
+        return (d[k] ? "1" : "0") === v;
+      });
     });
     if (devSort.key) {
       const { key, dir } = devSort;
@@ -288,11 +315,11 @@
       <td>${esc(d.room)}</td><td>${esc(d.connector_name)}</td>
       <td>${d.kind === "actuator" ? "sortie" : "capteur"}</td>
       <td><input type="text" data-k="unit" value="${esc(d.unit)}" style="width:56px"></td>
-      <td>${d.kind === "actuator"
-        ? `<input type="checkbox" data-k="controllable" ${d.controllable ? "checked" : ""}>` : "—"}</td>
-      <td>${d.kind === "actuator"
-        ? `<input type="checkbox" data-k="dimmable" ${d.dimmable ? "checked" : ""}
-             title="Pilotage en pourcentage (gradateur, ouverture partielle)">` : "—"}</td>
+      <td><input type="checkbox" data-k="controllable" ${d.controllable ? "checked" : ""}
+           title="Pilotage autorisé (sorties, ou capteurs virtuels d'une box)"></td>
+      <td><select data-k="scale_id" title="Échelle de pilotage proportionnel"
+             style="min-width:90px"><option value="">aucune</option>${scales.map(s =>
+             `<option value="${s.id}" ${s.id === d.scale_id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></td>
       <td><img data-pick="icon_on" src="${d.icon_on ? "/static/icons/" + d.icon_on : ""}"
            alt="on" title="icône état actif" style="width:26px;height:26px;cursor:pointer;background:var(--panel-2);border-radius:5px;padding:2px">
           <img data-pick="icon_off" src="${d.icon_off ? "/static/icons/" + d.icon_off : ""}"
@@ -306,9 +333,22 @@
         Object.assign(d, patch);
         await api(`/api/devices/${d.id}`, { method: "PUT", body: JSON.stringify(d) });
       };
-      tr.querySelectorAll("input[data-k]").forEach(inp => inp.onchange = () =>
-        save({ [inp.dataset.k]: inp.type === "checkbox" ? inp.checked : inp.value })
-          .then(() => toast("Enregistré")).catch(e => toast(e.message)));
+      tr.querySelectorAll("input[data-k], select[data-k]").forEach(inp => inp.onchange = () => {
+        const patch = { [inp.dataset.k]: inp.type === "checkbox" ? inp.checked : inp.value };
+        if (inp.dataset.k === "scale_id") {
+          const sid = inp.value ? +inp.value : null;
+          patch.scale_id = sid;
+          const s = scales.find(x => x.id === sid);
+          d.scale_name = s ? s.name : "";
+          // L'unité de l'échelle (si précisée) est recopiée sur le
+          // périphérique — simple transfert au moment du choix, sans liaison.
+          if (s && s.unit) {
+            patch.unit = s.unit;
+            tr.querySelector('input[data-k="unit"]').value = s.unit;
+          }
+        }
+        save(patch).then(() => toast("Enregistré")).catch(e => toast(e.message));
+      });
       tr.querySelectorAll("img[data-pick]").forEach(img => img.onclick = () =>
         pickIcon(chosen => save({ [img.dataset.pick]: chosen }).then(() => {
           img.src = chosen ? "/static/icons/" + chosen : ""; toast("Icône mise à jour");
@@ -316,7 +356,8 @@
     });
   }
   $("#dev-filter").oninput = renderDevices;
-  document.querySelectorAll("#dev-filters [data-f]").forEach(el => el.oninput = renderDevices);
+  document.querySelectorAll("#dev-filters [data-f]").forEach(el =>
+    el.oninput = () => { saveFilters(); renderDevices(); });
   document.querySelectorAll("#dev-head th[data-sort]").forEach(th => th.onclick = () => {
     const k = th.dataset.sort;
     devSort = devSort.key === k ? { key: k, dir: -devSort.dir } : { key: k, dir: 1 };
@@ -326,19 +367,178 @@
     renderDevices();
   });
 
+  /* La dernière icône choisie est mémorisée : bouton de reprise rapide +
+     surbrillance dans la galerie (pratique pour équiper toute une série de
+     périphériques de la même icône). */
+  const LAST_ICON_KEY = "domopi_last_icon";
   function pickIcon(cb) {
+    const last = localStorage.getItem(LAST_ICON_KEY) || "";
+    const hasLast = last && icons.includes(last);
+    const choose = i => { if (i) localStorage.setItem(LAST_ICON_KEY, i); cb(i); };
     dialog(`<h2 style="margin-top:0">Choisir une icône</h2>
       <div class="icon-pick" id="pick">${icons.map(i =>
-        `<img src="/static/icons/${i}" title="${i}" data-i="${i}">`).join("")}</div>
+        `<img src="/static/icons/${i}" title="${i}" data-i="${i}"
+          ${i === last ? 'class="sel"' : ""}>`).join("")}</div>
       <div class="row" style="margin-top:.8rem">
-        <button class="btn" id="pick-none">Aucune icône</button>
-        <button class="btn" id="pick-cancel">Annuler</button></div>`, dlg => {
+        <div class="fix"><button class="btn" id="pick-none">Aucune icône</button></div>
+        <div class="fix"><button class="btn" id="pick-cancel">Annuler</button></div>
+        ${hasLast ? `<div class="fix" style="margin-left:auto">
+          <button class="btn" id="pick-last" autofocus><img src="/static/icons/${last}"
+            style="width:22px;height:22px;vertical-align:-5px;margin-right:.35rem">
+            Reprendre la dernière icône</button></div>` : ""}</div>`, dlg => {
       dlg.querySelectorAll("#pick img").forEach(img =>
-        img.onclick = () => { cb(img.dataset.i); dlg.close(); });
+        img.onclick = () => { choose(img.dataset.i); dlg.close(); });
+      if (hasLast) {
+        dlg.querySelector("#pick-last").onclick = () => { choose(last); dlg.close(); };
+        dlg.querySelector("#pick img.sel")?.scrollIntoView({ block: "center" });
+      }
       dlg.querySelector("#pick-none").onclick = () => { cb(""); dlg.close(); };
       dlg.querySelector("#pick-cancel").onclick = () => dlg.close();
     });
   }
+
+  /* ============================================ échelles de pilotage */
+  async function loadScales() {
+    scales = await api("/api/scales");
+    // Filtre de la colonne « Échelle » du tableau des périphériques.
+    const sel = document.querySelector('#dev-filters [data-f="scale_id"]');
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">toutes</option><option value="none">aucune</option>` +
+      scales.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+    sel.value = cur;
+    if (sel.selectedIndex < 0) sel.value = "";
+    renderScales();
+  }
+
+  function renderScales() {
+    const box = $("#scales-list");
+    box.innerHTML = scales.length ? "" :
+      "<p class='muted'>Aucune échelle définie pour l'instant.</p>";
+    for (const s of scales) {
+      const div = document.createElement("div");
+      div.className = "card"; div.style.marginBottom = ".5rem"; div.style.minHeight = "0";
+      const n = devices.filter(d => d.scale_id === s.id).length;
+      div.innerHTML = `<div class="row">
+        <div><b>${esc(s.name)}</b> <span class="muted">— plage ${s.vmin} à
+          ${s.vmax}${s.unit ? " " + esc(s.unit) : ""},
+          pas ${s.step}${s.hide_slider ? ", barre masquée" : ""}${s.stops.length
+          ? `, ${s.stops.length} boutons` : ""} · ${n} périphérique${n > 1 ? "s" : ""}</span></div>
+        <div class="fix"><button class="btn sm" data-a="edit">Modifier</button></div>
+        <div class="fix"><button class="btn sm danger" data-a="del">Supprimer</button></div></div>`;
+      div.querySelector("[data-a=edit]").onclick = () => scaleForm(s);
+      div.querySelector("[data-a=del]").onclick = async () => {
+        if (!confirm(`Supprimer l'échelle « ${s.name} » ?` +
+          (n ? `\n${n} périphérique(s) repasseront en pilotage tout-ou-rien.` : ""))) return;
+        await api(`/api/scales/${s.id}`, { method: "DELETE" });
+        await loadScales(); loadDevices();
+      };
+      box.appendChild(div);
+    }
+  }
+
+  function scaleForm(s) {
+    const stopRow = st => `<div class="stop-row">
+      <input type="number" step="any" class="st-v" placeholder="valeur" value="${st.value ?? ""}">
+      <input type="text" class="st-l" placeholder="texte (optionnel)" value="${esc(st.label || "")}">
+      <img class="st-i" alt="" title="Icône (optionnelle) — cliquer pour choisir"
+        src="${st.icon ? "/static/icons/" + st.icon : ""}">
+      <button type="button" class="btn sm st-x" title="Retirer cette valeur">✕</button></div>`;
+    dialog(`<h2 style="margin-top:0">${s.id ? "Modifier l'échelle" : "Nouvelle échelle"}</h2>
+      <div class="row">
+        <div><label>Nom</label><input id="sc-name" type="text" value="${esc(s.name || "")}"></div>
+        <div style="flex:0 0 150px;min-width:0"><label title="Recopiée dans l'unité du périphérique
+          au moment du choix de l'échelle">Unité (optionnelle)</label>
+          <input id="sc-unit" type="text" placeholder="%, °C…" value="${esc(s.unit || "")}"></div>
+      </div>
+      <div class="row">
+        <div><label>Minimum</label><input id="sc-min" type="number" step="any" value="${s.vmin ?? 0}"></div>
+        <div><label>Maximum</label><input id="sc-max" type="number" step="any" value="${s.vmax ?? 100}"></div>
+        <div><label>Résolution (cran)</label><input id="sc-step" type="number" step="any" min="0" value="${s.step ?? 1}"></div>
+        <div><label>Auto-validation (s)</label><input id="sc-delay" type="number" step="0.1" min="0" value="${s.send_delay_s ?? 1.5}"></div>
+      </div>
+      <label><input type="checkbox" id="sc-hide" ${s.hide_slider ? "checked" : ""} style="width:auto">
+        Masquer la barre de réglage (boutons seuls)</label>
+      <label><input type="checkbox" id="sc-toggle" ${(s.toggle_click ?? 1) ? "checked" : ""} style="width:auto">
+        Clic court = marche/arrêt (sinon le clic ouvre directement le réglage)</label>
+      <label>Série de valeurs (boutons du réglage — 2 à 20, ou aucune) :
+        valeur obligatoire, texte et icône optionnels</label>
+      <div id="sc-stops">${(s.stops || []).map(stopRow).join("")}</div>
+      <div class="row" style="margin-top:.3rem">
+        <div class="fix"><button type="button" class="btn sm" id="sc-addstop">+ Ajouter une valeur</button></div>
+      </div>
+      <div id="sc-gallery" hidden style="margin-top:.4rem">
+        <div class="row" style="margin-bottom:.3rem">
+          <div class="fix"><button type="button" class="btn sm" id="sc-noicon">Sans icône</button></div>
+        </div>
+        <div class="icon-pick">${icons.map(i =>
+          `<img src="/static/icons/${i}" data-i="${i}" title="${i}">`).join("")}</div>
+      </div>
+      <div class="row" style="margin-top:1rem">
+        <button class="btn primary" id="sc-save">Enregistrer</button>
+        <button class="btn" id="sc-cancel">Annuler</button></div>`, dlg => {
+      const stopsBox = dlg.querySelector("#sc-stops");
+      const gallery = dlg.querySelector("#sc-gallery");
+      let iconTarget = null;
+      const wireRow = row => {
+        const img = row.querySelector(".st-i");
+        img.onclick = () => { iconTarget = row; gallery.hidden = false; };
+        row.querySelector(".st-x").onclick = () => row.remove();
+      };
+      stopsBox.querySelectorAll(".stop-row").forEach((row, i) => {
+        row.dataset.icon = (s.stops || [])[i]?.icon || "";
+        wireRow(row);
+      });
+      dlg.querySelector("#sc-addstop").onclick = () => {
+        if (stopsBox.children.length >= 20) return toast("20 valeurs maximum");
+        stopsBox.insertAdjacentHTML("beforeend", stopRow({}));
+        const row = stopsBox.lastElementChild;
+        row.dataset.icon = ""; wireRow(row);
+        row.querySelector(".st-v").focus();
+      };
+      dlg.querySelectorAll("#sc-gallery .icon-pick img").forEach(img => img.onclick = () => {
+        if (iconTarget) {
+          iconTarget.dataset.icon = img.dataset.i;
+          iconTarget.querySelector(".st-i").src = "/static/icons/" + img.dataset.i;
+        }
+        gallery.hidden = true;
+      });
+      dlg.querySelector("#sc-noicon").onclick = () => {
+        if (iconTarget) { iconTarget.dataset.icon = ""; iconTarget.querySelector(".st-i").src = ""; }
+        gallery.hidden = true;
+      };
+      dlg.querySelector("#sc-cancel").onclick = () => dlg.close();
+      dlg.querySelector("#sc-save").onclick = async () => {
+        const stops = [];
+        for (const row of stopsBox.querySelectorAll(".stop-row")) {
+          const v = row.querySelector(".st-v").value.trim();
+          if (v === "") return toast("Chaque valeur de la série doit être renseignée");
+          stops.push({ value: parseFloat(v.replace(",", ".")),
+                       label: row.querySelector(".st-l").value.trim(),
+                       icon: row.dataset.icon || "" });
+        }
+        if (stops.length === 1) return toast("Prévoyez au moins 2 valeurs, ou aucune");
+        const body = {
+          name: dlg.querySelector("#sc-name").value.trim(),
+          unit: dlg.querySelector("#sc-unit").value.trim(),
+          vmin: +dlg.querySelector("#sc-min").value,
+          vmax: +dlg.querySelector("#sc-max").value,
+          step: +dlg.querySelector("#sc-step").value,
+          send_delay_s: +dlg.querySelector("#sc-delay").value,
+          hide_slider: dlg.querySelector("#sc-hide").checked,
+          toggle_click: dlg.querySelector("#sc-toggle").checked,
+          stops };
+        try {
+          if (s.id) await api(`/api/scales/${s.id}`, { method: "PUT", body: JSON.stringify(body) });
+          else await api("/api/scales", { method: "POST", body: JSON.stringify(body) });
+        } catch (e) { return toast(e.message); }
+        dlg.close(); toast("Échelle enregistrée");
+        await loadScales(); loadDevices();
+      };
+    });
+  }
+  $("#scale-add").onclick = () => scaleForm({
+    unit: "", vmin: 0, vmax: 100, step: 1, send_delay_s: 1.5,
+    hide_slider: 0, toggle_click: 1, stops: [] });
 
   /* ============================================ pages */
   async function loadPages() {
@@ -397,7 +597,10 @@
       <label>Fond : image</label><select id="pf-bgimg">${bgOpts}</select>
       <label>Fond : couleur CSS (ex. #1a2430) — utilisé si aucune image</label>
       <input id="pf-bgcol" type="text" value="${p.background && p.background.startsWith("#") ? esc(p.background) : ""}">
-      <label>Ordre d'affichage</label><input id="pf-order" type="number" value="${p.sort_order || 0}">
+      <label title="Affichage par ordre croissant : le numéro le plus faible est placé
+        en premier. Sur la page parente, la tuile de cette sous-page partage cette
+        numérotation avec les widgets.">Ordre d'affichage (petit = en premier)</label>
+      <input id="pf-order" type="number" value="${p.sort_order || 0}">
       <label><input type="checkbox" id="pf-dual" ${p.dual_layout ? "checked" : ""} style="width:auto">
         Double rendu smartphone / PC (chaque widget peut cibler un des deux rendus)</label>
       <div class="row" style="margin-top:1rem">
@@ -453,8 +656,15 @@
     });
     $("#we-body").querySelectorAll("[data-e]").forEach(b => b.onclick = () =>
       widgetForm(ws.find(w => w.id === +b.dataset.e)));
+    // Nouveau widget placé après les widgets existants : ordre max + 1.
+    // Volontairement sans regarder les tuiles de sous-pages : elles sont en
+    // général placées très en début (-20) ou très en fin (+20), et une
+    // collision d'ordre est sans gravité alors que suivre leur index
+    // provoquerait de gros sauts de numérotation.
     $("#we-add").onclick = () => widgetForm({ page_id: page.id, wtype: "device",
-      layout: "both", sort_order: 0, options: {} });
+      layout: "both",
+      sort_order: ws.length ? Math.max(...ws.map(w => w.sort_order || 0)) + 1 : 0,
+      options: {} });
     $("#widgets-editor").scrollIntoView({ behavior: "smooth" });
   }
 
@@ -487,7 +697,10 @@
           <option value="both" ${w.layout === "both" ? "selected" : ""}>Smartphone et PC</option>
           <option value="mobile" ${w.layout === "mobile" ? "selected" : ""}>Smartphone uniquement</option>
           <option value="desktop" ${w.layout === "desktop" ? "selected" : ""}>PC uniquement</option></select></div>
-        <div><label>Ordre</label><input id="wf-order" type="number" value="${w.sort_order || 0}"></div>
+        <div><label title="Affichage par ordre croissant : le numéro le plus faible est
+          placé en premier (en haut de la page). Numérotation commune avec les tuiles
+          de sous-pages de la même page.">Ordre (petit = en haut)</label>
+          <input id="wf-order" type="number" value="${w.sort_order || 0}"></div>
         <div id="wf-range"><label>Fenêtre par défaut du graphe</label><select id="wf-rangev">
           ${[["86400", "24 h"], ["345600", "4 jours"], ["1296000", "15 jours"], ["2592000", "30 jours"]]
             .map(([v, l]) => `<option value="${v}" ${String(w.options.range_s || 86400) === v ? "selected" : ""}>${l}</option>`).join("")}
@@ -579,7 +792,7 @@
   $("#up-bg").onchange = () => upload("#up-bg", "/api/backgrounds/upload");
 
   /* ============================================ onglets */
-  const TABS = ["pages", "devices", "icons", "general"];
+  const TABS = ["pages", "devices", "params", "icons", "general"];
   function showTab(name) {
     if (!TABS.includes(name)) name = "pages";
     document.querySelectorAll("#tabs .tab").forEach(b =>
@@ -603,6 +816,8 @@
     if (me.role !== "admin") return location.href = "/";
     $("#who").textContent = me.username + " (admin)";
     await Promise.all([loadSettings(), loadGalleries()]);
+    await loadScales();          // avant les périphériques (noms d'échelles, filtre)
+    restoreFilters();            // avant le premier rendu du tableau
     await Promise.all([loadConnectors(), loadDevices(), loadPages(), loadUsers()]);
   })();
 })();

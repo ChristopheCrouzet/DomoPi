@@ -20,6 +20,7 @@
 <nav id="tabs">
   <button class="tab" data-tab="pages">Pages de visualisation</button>
   <button class="tab" data-tab="devices">Périphériques</button>
+  <button class="tab" data-tab="params">Paramètres</button>
   <button class="tab" data-tab="icons">Icônes et fonds de page</button>
   <button class="tab" data-tab="general">Réglages généraux et comptes</button>
 </nav>
@@ -46,9 +47,12 @@
   <h2>Périphériques</h2>
   <p class="muted">Cochez les périphériques à surveiller (historisés au pas de collecte).
      « Masquer » retire un périphérique du choix des nouveaux widgets (les widgets
-     existants le conservent). Pour les sorties, vous pouvez autoriser ou non leur
-     pilotage, et cocher « 0-100&nbsp;% » pour un pilotage en pourcentage (gradateur
-     de lampe, ouverture partielle de volet). Cliquez sur une icône pour la changer.</p>
+     existants le conservent). « Pilotable » autorise le pilotage d'une sortie —
+     ou d'un capteur virtuel d'une box (consigne, mode…). Une <b>échelle</b>
+     ajoute le pilotage proportionnel (gradateur, volet, consigne de chauffage…) ;
+     les échelles se définissent dans l'onglet « Paramètres », et si l'échelle
+     précise une unité, celle-ci est recopiée sur le périphérique au moment du
+     choix. Cliquez sur une icône pour la changer.</p>
   <div class="row" style="max-width:420px">
     <div><label for="dev-filter">Recherche globale</label><input id="dev-filter" type="text" placeholder="nom, pièce, contrôleur…"></div>
   </div>
@@ -65,7 +69,7 @@
         <th data-sort="kind">Type</th>
         <th data-sort="unit">Unité</th>
         <th data-sort="controllable">Pilotable</th>
-        <th data-sort="dimmable">0-100&nbsp;%</th>
+        <th data-sort="scale_name" title="Échelle de pilotage proportionnel (onglet Paramètres)">Échelle</th>
         <th>Icônes on / off</th>
       </tr>
       <tr id="dev-filters">
@@ -81,13 +85,27 @@
         <th><input data-f="unit" type="text" placeholder="filtrer…"></th>
         <th><select data-f="controllable" title="Pilotable ?"><option value="">tous</option>
           <option value="1">oui</option><option value="0">non</option></select></th>
-        <th><select data-f="dimmable" title="0-100 % ?"><option value="">tous</option>
-          <option value="1">oui</option><option value="0">non</option></select></th>
+        <th><select data-f="scale_id" title="Échelle ?"><option value="">toutes</option></select></th>
         <th></th>
       </tr>
     </thead>
     <tbody id="dev-body"></tbody>
   </table>
+  </section>
+
+  <section id="tab-params" hidden>
+  <h2>Échelles de pilotage</h2>
+  <p class="muted">Une échelle définit comment se règle une sortie pilotée en
+     proportionnel : plage et cran (résolution) de la barre de réglage, tempo
+     d'auto-validation, et série de 2 à 20 valeurs proposées en boutons — chacune
+     avec un texte et une icône optionnels. Si la valeur courante du périphérique
+     correspond à une valeur de la série, son icône et son texte remplacent
+     l'affichage sur la tuile. L'unité (optionnelle) est recopiée sur le
+     périphérique au moment du choix de l'échelle. L'échelle s'affecte ensuite à
+     chaque périphérique pilotable dans l'onglet « Périphériques » (« aucune » =
+     pilotage tout-ou-rien seulement).</p>
+  <div id="scales-list"></div>
+  <button class="btn" id="scale-add" style="margin-top:.6rem">+ Nouvelle échelle</button>
   </section>
 
   <section id="tab-icons" hidden>

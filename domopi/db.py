@@ -4,6 +4,7 @@ Tables :
   users            comptes (admin / reader)
   settings         clé/valeur (intervalle de polling, rétention, verbosité...)
   connectors       instances de contrôleurs (eedomus, wes_mqtt)
+  scales           échelles de pilotage proportionnel (plage, cran, boutons)
   devices          périphériques découverts / surveillés
   measures         mesures brutes (pas = intervalle de polling, 5 min par défaut)
   measures_daily   archives journalières min/moy/max (après purge du brut)
@@ -11,6 +12,7 @@ Tables :
   widgets          éléments posés sur les pages
   journal          journal applicatif horodaté
 """
+import json
 import os
 import sqlite3
 import time
@@ -51,6 +53,18 @@ CREATE TABLE IF NOT EXISTS connectors(
   enabled INTEGER NOT NULL DEFAULT 1,
   config TEXT NOT NULL DEFAULT '{}'            -- JSON
 );
+CREATE TABLE IF NOT EXISTS scales(
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  unit TEXT NOT NULL DEFAULT '',               -- recopiée sur le périphérique au choix de l'échelle
+  vmin REAL NOT NULL DEFAULT 0,                -- borne basse de la barre de réglage
+  vmax REAL NOT NULL DEFAULT 100,              -- borne haute
+  step REAL NOT NULL DEFAULT 1,                -- cran de la barre + format d'affichage
+  hide_slider INTEGER NOT NULL DEFAULT 0,      -- 1 = boutons seuls, pas de barre
+  send_delay_s REAL NOT NULL DEFAULT 1.5,      -- tempo d'auto-validation de la barre
+  toggle_click INTEGER NOT NULL DEFAULT 1,     -- 1 = clic court marche/arrêt, 0 = clic ouvre le réglage
+  stops TEXT NOT NULL DEFAULT '[]'             -- JSON [{value, label?, icon?}] (0 ou 2..20)
+);
 CREATE TABLE IF NOT EXISTS devices(
   id INTEGER PRIMARY KEY,
   connector_id INTEGER NOT NULL REFERENCES connectors(id) ON DELETE CASCADE,
@@ -61,7 +75,8 @@ CREATE TABLE IF NOT EXISTS devices(
   room TEXT DEFAULT '',
   monitored INTEGER NOT NULL DEFAULT 0,        -- historisé par le poller
   controllable INTEGER NOT NULL DEFAULT 0,     -- pilotage autorisé (actionneurs)
-  dimmable INTEGER NOT NULL DEFAULT 0,         -- pilotage 0-100 % (gradateur, volet)
+  dimmable INTEGER NOT NULL DEFAULT 0,         -- heuristique de découverte (pilotage proportionnel)
+  scale_id INTEGER REFERENCES scales(id) ON DELETE SET NULL,  -- échelle de pilotage (NULL = tout-ou-rien)
   hidden INTEGER NOT NULL DEFAULT 0,           -- non proposé pour les nouveaux widgets
   icon_on TEXT DEFAULT '',
   icon_off TEXT DEFAULT '',
@@ -130,11 +145,36 @@ def init_db():
         conn.execute("ALTER TABLE devices ADD COLUMN dimmable INTEGER NOT NULL DEFAULT 0")
     if "hidden" not in cols:
         conn.execute("ALTER TABLE devices ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+    if "scale_id" not in cols:
+        conn.execute("ALTER TABLE devices ADD COLUMN scale_id INTEGER "
+                     "REFERENCES scales(id) ON DELETE SET NULL")
     pcols = {r["name"] for r in conn.execute("PRAGMA table_info(pages)").fetchall()}
     if "icon" not in pcols:
         conn.execute("ALTER TABLE pages ADD COLUMN icon TEXT DEFAULT ''")
+    scols = {r["name"] for r in conn.execute("PRAGMA table_info(scales)").fetchall()}
+    if "unit" not in scols:
+        conn.execute("ALTER TABLE scales ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
+        # l'échelle « 0 - 100 % » seedée avant l'apparition de la colonne
+        conn.execute("UPDATE scales SET unit='%' WHERE unit='' AND id="
+                     "(SELECT value FROM settings WHERE key='default_scale_id')")
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
+    # Amorçage unique (marqué par le réglage default_scale_id) : une échelle
+    # « 0 - 100 % » reproduisant l'ancien pilotage des gradateurs/volets, affectée
+    # aux périphériques marqués dimmable, et proposée par défaut à la découverte.
+    if conn.execute("SELECT 1 FROM settings WHERE key='default_scale_id'").fetchone() is None:
+        cur = conn.execute(
+            "INSERT INTO scales(name,unit,vmin,vmax,step,hide_slider,send_delay_s,"
+            "toggle_click,stops) VALUES(?,?,?,?,?,?,?,?,?)",
+            ("0 - 100 %", "%", 0, 100, 1, 0, 1.5, 1,
+             json.dumps([{"value": v, "label": "", "icon": ""}
+                         for v in (0, 25, 50, 75, 100)])))
+        conn.execute("UPDATE devices SET scale_id=? WHERE dimmable=1 AND scale_id IS NULL",
+                     (cur.lastrowid,))
+        conn.execute("UPDATE devices SET unit='%' WHERE dimmable=1 "
+                     "AND (unit IS NULL OR unit='')")
+        conn.execute("INSERT INTO settings(key,value) VALUES('default_scale_id',?)",
+                     (str(cur.lastrowid),))
     conn.commit()
 
 
