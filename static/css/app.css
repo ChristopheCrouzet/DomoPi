@@ -56,6 +56,9 @@ button, input, select, textarea { font: inherit; }
 #banner nav a:hover, #banner .bbtn:hover { border-color: var(--line); background: var(--panel-2); }
 #banner nav a.active { border-color: var(--copper); color: var(--amber); }
 #banner .who { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+#banner .brand-sub { color: var(--muted); letter-spacing: .08em; white-space: nowrap;
+  text-transform: uppercase; font-size: .8rem; }
+.show-sm { display: none; }   /* libellés courts affichés uniquement en mobile */
 /* sous-bandeau à onglets (page Paramètres) */
 #tabs { position: sticky; top: 46px; z-index: 40; display: flex; gap: .3rem;
   padding: .35rem .8rem; background: var(--panel);
@@ -202,6 +205,14 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
   main { padding: .6rem; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: .5rem; }
   #banner .who { display: none; }
+  #banner { flex-wrap: wrap; row-gap: .2rem; }
+  #banner .brand-sub { display: none; }
+  .hide-sm { display: none; }
+  .show-sm { display: inline; }
+  /* pages racines du visualiseur : seconde ligne du bandeau en mobile */
+  #root-nav { order: 10; flex-basis: 100%;
+    border-top: 1px solid var(--line); padding-top: .2rem; }
+  #root-nav:empty { display: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .card { transition: border-color .15s, transform .15s; }
