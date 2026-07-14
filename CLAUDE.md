@@ -46,7 +46,9 @@ domopi setup/
 │   ├── icons/               32 icônes SVG livrées + uploads utilisateur
 │   └── backgrounds/         fonds de page (uploads)
 ├── tools/
-│   └── make_icons.py        générateur des icônes SVG intégrées
+│   ├── make_icons.py        générateur des icônes SVG intégrées
+│   ├── deploy.ps1           déploiement dev vers le Pi de test (voir plus bas)
+│   └── deploy-remote.sh     partie exécutée sur le Pi par deploy.ps1
 ├── deploy/                  domopi.service, nginx-domopi.conf, proxy-params,
 │                            mosquitto-domopi.conf
 ├── install.sh              installeur idempotent (sudo bash install.sh)
