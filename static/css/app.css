@@ -87,8 +87,11 @@ h2 { font-size: 1.02rem; color: var(--amber); margin: 1.4rem 0 .6rem;
   padding: .7rem; display: flex; flex-direction: column; gap: .4rem;
   min-height: 96px;
 }
-.card.clickable { cursor: pointer; }
+.card.clickable { cursor: pointer; user-select: none;
+  -webkit-user-select: none; -webkit-touch-callout: none; }
 .card.clickable:hover { border-color: var(--copper); }
+/* appui long (mobile) : le cadre grossit légèrement pendant la vibration */
+.card.pressing { transform: scale(1.06); border-color: var(--amber); }
 .card .icon { height: 44px; display: flex; align-items: center; justify-content: center; }
 .card .icon img { height: 42px; width: 42px; filter: drop-shadow(0 0 2px rgba(0,0,0,.5)); }
 /* État partiel (gradateur / ouverture partielle) : l'icône "on" est révélée
@@ -195,5 +198,5 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
   #banner .who { display: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .card { transition: border-color .15s; }
+  .card { transition: border-color .15s, transform .15s; }
 }

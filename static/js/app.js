@@ -227,22 +227,48 @@
       (stale ? `<div class="stale">sans réponse</div>` : "");
     if (d.controllable) {
       c.tabIndex = 0;
+      const toggle = async () => {
+        const target = on ? "off" : "on";
+        try {
+          await api(`/api/devices/${d.id}/set`, { method: "POST",
+            body: JSON.stringify({ value: target }) });
+          toast(`${d.name} → ${target === "on" ? "marche" : "arrêt"}`);
+          setTimeout(refreshValues, 2500);
+        } catch (e) { toast("Échec : " + e.message); }
+      };
       if (d.dimmable) {
-        c.title = "Cliquer pour régler (0-100 %)";
-        c.onclick = () => openDimmer(d, pct ?? (on ? 100 : 0));
+        // Clic/appui court : marche-arrêt. Double-clic (PC) ou appui long
+        // (mobile, avec micro-vibration et zoom du cadre) : réglage 0-100 %.
+        c.title = "Clic : marche/arrêt · double-clic ou appui long : réglage 0-100 %";
+        const openDetails = () => openDimmer(d, pct ?? (on ? 100 : 0));
+        let pressTimer = null, longFired = false, clickTimer = null;
+        c.onpointerdown = e => {
+          if (e.pointerType === "mouse" && e.button !== 0) return;
+          longFired = false;
+          pressTimer = setTimeout(() => {
+            longFired = true;
+            if (navigator.vibrate) navigator.vibrate(30);
+            c.classList.add("pressing");
+            setTimeout(() => c.classList.remove("pressing"), 350);
+            openDetails();
+          }, 500);
+        };
+        const cancelPress = () => clearTimeout(pressTimer);
+        c.onpointerup = cancelPress; c.onpointercancel = cancelPress;
+        c.onpointerleave = cancelPress;
+        c.oncontextmenu = e => e.preventDefault();
+        c.onclick = () => {
+          if (longFired) { longFired = false; return; }
+          if (clickTimer) return;                 // 2e clic d'un double-clic
+          clickTimer = setTimeout(() => { clickTimer = null; toggle(); }, 280);
+        };
+        c.ondblclick = () => { clearTimeout(clickTimer); clickTimer = null; openDetails(); };
+        c.onkeydown = e => { if (e.key === "Enter") toggle(); };
       } else {
         c.title = "Cliquer pour basculer";
-        c.onclick = async () => {
-          const target = on ? "off" : "on";
-          try {
-            await api(`/api/devices/${d.id}/set`, { method: "POST",
-              body: JSON.stringify({ value: target }) });
-            toast(`${d.name} → ${target === "on" ? "marche" : "arrêt"}`);
-            setTimeout(refreshValues, 2500);
-          } catch (e) { toast("Échec : " + e.message); }
-        };
+        c.onclick = toggle;
+        c.onkeydown = e => { if (e.key === "Enter") toggle(); };
       }
-      c.onkeydown = e => { if (e.key === "Enter") c.onclick(); };
     } else if (d.kind === "sensor") {
       c.classList.add("clickable");
       c.onclick = () => openZoom(d);
@@ -264,13 +290,15 @@
         ${[0, 25, 50, 75, 100].map(p =>
           `<button class="btn" data-pct="${p}" style="flex:1;min-width:0;padding:.45rem 0">${p}</button>`).join("")}
       </div>
-      <div class="row" style="margin-top:.8rem">
-        <button class="btn primary" id="dim-apply" style="flex:2">Appliquer</button>
+      <p class="muted" style="margin:.6rem 0 0;font-size:.8rem">La consigne part
+        automatiquement 1,5&nbsp;s après le relâchement du curseur.</p>
+      <div class="row" style="margin-top:.6rem">
         <button class="btn" id="dim-close" style="flex:1">Fermer</button>
       </div>`;
     const slider = $("#dim-slider");
-    slider.oninput = () => $("#dim-val").textContent = slider.value + " %";
+    let sendTimer = null;
     const send = async v => {
+      clearTimeout(sendTimer); sendTimer = null;
       try {
         await api(`/api/devices/${d.id}/set`, { method: "POST",
           body: JSON.stringify({ value: String(v) }) });
@@ -279,12 +307,20 @@
         setTimeout(refreshValues, 2500);
       } catch (e) { toast("Échec : " + e.message); }
     };
+    slider.oninput = () => {              // en cours de glissement : annule l'envoi
+      clearTimeout(sendTimer); sendTimer = null;
+      $("#dim-val").textContent = slider.value + " %";
+    };
+    slider.onchange = () => {             // relâchement : envoi différé de 1,5 s
+      clearTimeout(sendTimer);
+      $("#dim-val").textContent = slider.value + " % …";
+      sendTimer = setTimeout(() => send(slider.value), 1500);
+    };
     body.querySelectorAll("[data-pct]").forEach(b =>
       b.onclick = () => { slider.value = b.dataset.pct;
                           $("#dim-val").textContent = b.dataset.pct + " %";
                           send(b.dataset.pct); });
-    $("#dim-apply").onclick = () => send(slider.value);
-    $("#dim-close").onclick = () => dlg.close();
+    $("#dim-close").onclick = () => { clearTimeout(sendTimer); dlg.close(); };
     dlg.showModal();
   }
 
