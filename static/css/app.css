@@ -163,6 +163,19 @@ td .mono { font-family: var(--mono); }
 .icon-pick img:hover, .icon-pick img.sel { border-color: var(--amber); background: var(--panel-2); }
 dialog { background: var(--panel); color: var(--txt); border: 1px solid var(--line);
   border-radius: 12px; max-width: min(680px, 94vw); width: 100%; }
+.mono { font-family: var(--mono); }
+/* aide configuration MQTT du WES (découverte vide ou en échec) */
+.wes-help .wes-panel { border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; margin: .5rem 0; }
+.wes-help .wes-head { background: #314a5b; color: #fff; padding: .4rem .7rem;
+  font-size: .88rem; }
+.wes-help th { width: 45%; }
+.wes-help small { display: block; color: var(--muted); font-weight: 400; }
+.wes-help .wes-on { display: inline-block; background: #5cb85c; color: #fff;
+  border-radius: 999px; padding: .02rem .6rem; font-size: .78rem; font-weight: 600; }
+.wes-help tr.crucial th, .wes-help tr.crucial td { color: var(--amber); }
+.wes-help .dot { display: inline-block; width: .8rem; height: .8rem;
+  border-radius: 50%; vertical-align: -.08rem; }
 dialog::backdrop { background: rgba(0,0,0,.6); }
 @media (max-width: 700px) {
   main { padding: .6rem; }

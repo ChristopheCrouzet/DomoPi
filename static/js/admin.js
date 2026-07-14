@@ -83,8 +83,12 @@
         try {
           const r = await api(`/api/connectors/${c.id}/discover`);
           toast(`${r.count} périphériques découverts`);
+          if (!r.count && c.type === "wes_mqtt") wesMqttHelp(c, null);
           loadDevices();
-        } catch (e) { toast("Échec : " + e.message); }
+        } catch (e) {
+          toast("Échec : " + e.message);
+          if (c.type === "wes_mqtt") wesMqttHelp(c, e.message);
+        }
         ev.target.disabled = false; ev.target.textContent = "Découvrir les périphériques";
       };
       $("#conn-list").appendChild(div);
@@ -114,6 +118,69 @@
       };
     });
   }
+  /* Aide affichée quand la découverte WES ne trouve rien : reprend la
+     présentation de la page « Configuration MQTT » du WES (MQTTCFG.HTM)
+     avec les valeurs attendues, préremplies depuis le connecteur. */
+  function wesMqttHelp(c, errMsg) {
+    const cfg = c.config || {};
+    const isIp = h => /^\d{1,3}(\.\d{1,3}){3}$/.test(h);
+    let broker = cfg.host;
+    if (!broker || broker === "127.0.0.1" || broker === "localhost")
+      broker = isIp(location.hostname) ? location.hostname
+                                       : "l'adresse IPv4 du Raspberry";
+    const px = cfg.discovery_prefix || "homeassistant";
+    dialog(`<h2 style="margin-top:0">Aucun périphérique WES découvert</h2>
+      ${errMsg ? `<p class="muted">Erreur : ${esc(errMsg)}</p>` : ""}
+      <p>Vérifiez la page <b>Configuration MQTT</b> du WES
+         (<span class="mono">http://&lt;ip-du-wes&gt;/MQTTCFG.HTM</span>) —
+         les valeurs attendues :</p>
+      <div class="wes-help">
+        <div class="wes-panel">
+          <div class="wes-head">⇄ Configuration des paramètres MQTT</div>
+          <table>
+            <tr><th>État MQTT</th><td><span class="wes-on">ON</span></td></tr>
+            <tr><th>Adresse IP ou nom du broker</th>
+              <td><b class="mono">${esc(broker)}</b>
+              <small>Indiquez une adresse IP : le WES ne sait pas résoudre les
+              noms Windows du réseau local (type PI-SERVER).</small></td></tr>
+            <tr><th>Port du broker</th><td class="mono">${esc(cfg.port || 1883)}</td></tr>
+            <tr><th>Username</th><td class="mono">${esc(cfg.username || "(aucun)")}</td></tr>
+            <tr><th>Password</th><td>le même que dans le connecteur DomoPi
+              (identifiants MQTT définis à l'installation)</td></tr>
+            <tr><th>Keep-alive (secondes)</th><td class="mono">60</td></tr>
+            <tr><th>QoS par défaut</th><td>0 - Au plus une fois</td></tr>
+            <tr class="crucial"><th>MQTT Discovery</th>
+              <td><span class="wes-on">ON</span>
+              <small>Indispensable : c'est lui qui publie les périphériques
+              que DomoPi découvre.</small></td></tr>
+            <tr><th>Préfixe Discovery</th><td>${px === "homeassistant"
+              ? "Home Assistant (homeassistant)"
+              : `Personnalisé… → <span class="mono">${esc(px)}</span>`}</td></tr>
+            <tr><th>Activer les Topics à envoyer</th><td>cochez les familles de
+              valeurs voulues (TIC, pinces, sondes, relais, impulsions…)</td></tr>
+            <tr><th>Lancer le Discovery manuellement</th><td>après « Enregistrer »,
+              cliquez <b>Envoyer Discovery</b></td></tr>
+          </table>
+        </div>
+        <p><b>État de la connexion</b> (le rond sur la page du WES) :
+          <span class="dot" style="background:#5cb85c"></span> vert = connecté ·
+          <span class="dot" style="background:#428bca"></span> bleu = MQTT actif
+          mais connexion inactive ·
+          <span class="dot" style="background:#f0ad4e"></span> orange = connexion
+          en cours ou perdue ·
+          <span class="dot" style="background:#c0020b"></span> rouge = erreur.
+          S'il reste bleu ou orange, revoyez l'adresse du broker et les
+          identifiants.</p>
+        <p>Une fois le voyant vert, patientez ~30&nbsp;s (le temps que le WES
+           publie ses entités), puis relancez « Découvrir les périphériques ».</p>
+      </div>
+      <div class="row" style="margin-top:.8rem">
+        <div class="fix"><button class="btn" id="wes-close">Fermer</button></div>
+      </div>`, dlg => {
+      dlg.querySelector("#wes-close").onclick = () => dlg.close();
+    });
+  }
+
   $("#conn-add-eedomus").onclick = () =>
     connectorForm({ type: "eedomus", name: "eedomus", enabled: true, config: { ...CONN_DEFAULTS.eedomus } });
   $("#conn-add-wes").onclick = () =>
