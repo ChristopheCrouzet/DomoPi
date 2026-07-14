@@ -1,0 +1,7 @@
+# Projet déployé sur Linux (Raspberry Pi) : fins de ligne LF partout,
+# même sur un poste de développement Windows.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary

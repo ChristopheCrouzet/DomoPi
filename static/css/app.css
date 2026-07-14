@@ -1,0 +1,166 @@
+/* DomoPi — thème "tableau électrique"
+   Palette : graphite #12161c / panneau #1b2129 / trait #2b3442
+             ambre énergie #e8a13c / cuivre #b06a2c / signal vert #58c470
+             texte #dfe6ee / texte secondaire #8b97a5 */
+:root {
+  --bg: #12161c;
+  --panel: #1b2129;
+  --panel-2: #222a35;
+  --line: #2b3442;
+  --amber: #e8a13c;
+  --copper: #b06a2c;
+  --ok: #58c470;
+  --warn: #e0b13f;
+  --err: #e05b4f;
+  --txt: #dfe6ee;
+  --muted: #8b97a5;
+  --mono: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Menlo, monospace;
+  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: var(--sans);
+  font-size: 15px;
+}
+a { color: var(--amber); text-decoration: none; }
+button, input, select, textarea { font: inherit; }
+
+/* ---------------- bandeau système ---------------- */
+#banner {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: .6rem;
+  padding: .45rem .8rem;
+  background: linear-gradient(180deg, #1d242e, #161c24);
+  border-bottom: 2px solid var(--copper);
+}
+#banner .brand {
+  font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  font-size: .95rem; color: var(--amber); white-space: nowrap;
+}
+#banner .led {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--ok); box-shadow: 0 0 6px var(--ok);
+}
+#banner .led.err { background: var(--err); box-shadow: 0 0 6px var(--err); }
+#banner nav { display: flex; gap: .25rem; flex: 1; overflow-x: auto; }
+#banner nav a, #banner .bbtn {
+  color: var(--txt); background: transparent; border: 1px solid transparent;
+  border-radius: 6px; padding: .3rem .6rem; cursor: pointer; white-space: nowrap;
+}
+#banner nav a:hover, #banner .bbtn:hover { border-color: var(--line); background: var(--panel-2); }
+#banner nav a.active { border-color: var(--copper); color: var(--amber); }
+#banner .who { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+
+/* ---------------- structure ---------------- */
+main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+.page-bg { min-height: calc(100vh - 46px); background-size: cover; background-position: center; }
+h1 { font-size: 1.25rem; margin: .2rem 0 1rem; letter-spacing: .04em; }
+h2 { font-size: 1.02rem; color: var(--amber); margin: 1.4rem 0 .6rem;
+     text-transform: uppercase; letter-spacing: .1em; border-bottom: 1px solid var(--line);
+     padding-bottom: .3rem; }
+.muted { color: var(--muted); }
+.crumbs { color: var(--muted); font-size: .85rem; margin-bottom: .8rem; }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--amber); }
+
+/* ---------------- cartes / widgets ---------------- */
+.grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.grid .wide { grid-column: 1 / -1; }
+.card {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: .7rem; display: flex; flex-direction: column; gap: .4rem;
+  min-height: 96px;
+}
+.card.clickable { cursor: pointer; }
+.card.clickable:hover { border-color: var(--copper); }
+.card .icon { height: 44px; display: flex; align-items: center; justify-content: center; }
+.card .icon img { height: 42px; width: 42px; filter: drop-shadow(0 0 2px rgba(0,0,0,.5)); }
+/* État partiel (gradateur / ouverture partielle) : l'icône "on" est révélée
+   depuis le bas à hauteur de --pct, par-dessus l'icône "off". */
+.card .icon .stack { position: relative; width: 42px; height: 42px; display: block; }
+.card .icon .stack img { position: absolute; inset: 0; }
+.card .icon .stack img.top { clip-path: inset(calc(100% - var(--pct, 0%)) 0 0 0); }
+input[type=range] { accent-color: var(--amber); }
+.card .name { font-size: .82rem; color: var(--muted); text-align: center;
+              overflow: hidden; text-overflow: ellipsis; }
+.card .value {
+  font-family: var(--mono); font-size: 1.25rem; text-align: center;
+  color: var(--amber); font-variant-numeric: tabular-nums;
+}
+.card .value.off { color: var(--muted); }
+.card .stale { color: var(--err); font-size: .72rem; text-align: center; }
+.card.link { align-items: center; justify-content: center; border-style: dashed; }
+.card.link .name { color: var(--txt); font-size: .95rem; }
+
+/* ---------------- graphes ---------------- */
+.chart-box { background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line); border-radius: 10px; padding: .6rem; }
+.chart-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.chart-head .title { font-size: .9rem; flex: 1; }
+.chart-head button { background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--txt); border-radius: 6px; padding: .15rem .5rem; cursor: pointer; font-size: .78rem; }
+.chart-head button.active { border-color: var(--copper); color: var(--amber); }
+.chart-svg { width: 100%; height: auto; display: block; }
+.legend { display: flex; gap: .9rem; font-size: .75rem; color: var(--muted); padding: .2rem .4rem; }
+.legend i { display: inline-block; width: 10px; height: 3px; margin-right: 4px; vertical-align: middle; }
+
+/* ---------------- formulaires ---------------- */
+label { display: block; font-size: .82rem; color: var(--muted); margin: .5rem 0 .15rem; }
+input[type=text], input[type=password], input[type=number], select, textarea {
+  width: 100%; background: var(--bg); color: var(--txt);
+  border: 1px solid var(--line); border-radius: 7px; padding: .45rem .6rem;
+}
+input:focus, select:focus, textarea:focus, button:focus-visible {
+  outline: 2px solid var(--copper); outline-offset: 1px;
+}
+.btn { background: var(--panel-2); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 7px; padding: .45rem .9rem; cursor: pointer; }
+.btn:hover { border-color: var(--copper); }
+.btn.primary { background: var(--copper); border-color: var(--copper); color: #fff; }
+.btn.danger { border-color: var(--err); color: var(--err); background: transparent; }
+.btn.sm { padding: .2rem .55rem; font-size: .8rem; }
+.row { display: flex; gap: .6rem; align-items: end; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 130px; }
+.row > .fix { flex: 0; min-width: 0; }
+
+/* ---------------- tableaux ---------------- */
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+th { text-align: left; color: var(--muted); font-weight: 600; padding: .4rem .5rem;
+     border-bottom: 1px solid var(--line); }
+td { padding: .35rem .5rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+tr:hover td { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+td .mono { font-family: var(--mono); }
+.lvl-ERROR { color: var(--err); } .lvl-WARNING { color: var(--warn); }
+.lvl-INFO { color: var(--txt); } .lvl-DEBUG { color: var(--muted); }
+
+/* ---------------- login ---------------- */
+#login-view { display: flex; min-height: 80vh; align-items: center; justify-content: center; }
+#login-view .panel { width: min(340px, 92vw); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; padding: 1.4rem;
+  border-top: 3px solid var(--copper); }
+
+/* ---------------- divers ---------------- */
+.toast { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--copper); color: var(--txt);
+  padding: .5rem 1rem; border-radius: 8px; z-index: 100; }
+.icon-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px,1fr));
+  gap: .4rem; max-height: 220px; overflow: auto; padding: .4rem;
+  border: 1px solid var(--line); border-radius: 8px; }
+.icon-pick img { width: 40px; height: 40px; padding: 4px; border-radius: 6px;
+  cursor: pointer; border: 1px solid transparent; }
+.icon-pick img:hover, .icon-pick img.sel { border-color: var(--amber); background: var(--panel-2); }
+dialog { background: var(--panel); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 12px; max-width: min(680px, 94vw); width: 100%; }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+@media (max-width: 700px) {
+  main { padding: .6rem; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: .5rem; }
+  #banner .who { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card { transition: border-color .15s; }
+}

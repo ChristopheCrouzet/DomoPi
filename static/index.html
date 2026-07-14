@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DomoPi</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="icon" href="/static/icons/panneaux_solaires.svg">
+</head>
+<body>
+<header id="banner" hidden>
+  <span class="led" id="sys-led" title="État du système"></span>
+  <span class="brand" id="brand">DomoPi</span>
+  <nav id="root-nav"></nav>
+  <button class="bbtn" id="btn-journal" title="Journal de l'application">Journal</button>
+  <button class="bbtn" id="btn-admin" title="Paramètres" hidden>Paramètres</button>
+  <span class="who" id="who"></span>
+  <button class="bbtn" id="btn-logout">Se déconnecter</button>
+</header>
+
+<div id="login-view" hidden>
+  <div class="panel">
+    <div class="brand" style="color:var(--amber);letter-spacing:.12em;font-weight:700">DOMOPI</div>
+    <p class="muted">Supervision domotique locale</p>
+    <label for="li-user">Utilisateur</label>
+    <input id="li-user" type="text" autocomplete="username">
+    <label for="li-pass">Mot de passe</label>
+    <input id="li-pass" type="password" autocomplete="current-password">
+    <p id="li-err" style="color:var(--err)" hidden>Identifiants invalides.</p>
+    <div style="margin-top:1rem">
+      <button class="btn primary" id="li-go" style="width:100%">Se connecter</button>
+    </div>
+  </div>
+</div>
+
+<div class="page-bg" id="page-bg">
+  <main id="main" hidden></main>
+</div>
+
+<dialog id="zoom-dlg">
+  <div style="padding:1rem" id="zoom-body"></div>
+</dialog>
+
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

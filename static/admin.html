@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DomoPi — Paramètres</title>
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<header id="banner">
+  <span class="led" id="sys-led"></span>
+  <span class="brand">DomoPi · Paramètres</span>
+  <nav>
+    <a href="/">← Retour aux pages</a>
+  </nav>
+  <span class="who" id="who"></span>
+  <button class="bbtn" id="btn-logout">Se déconnecter</button>
+</header>
+<main>
+  <h2>Réglages généraux</h2>
+  <div class="row">
+    <div><label for="s-title">Titre du site</label><input id="s-title" type="text"></div>
+    <div><label for="s-interval">Intervalle de collecte (secondes)</label>
+      <input id="s-interval" type="number" min="30" step="30"></div>
+    <div><label for="s-retention">Rétention du brut (jours)</label>
+      <input id="s-retention" type="number" min="7"></div>
+  </div>
+  <div class="row">
+    <div><label for="s-jlevel">Verbosité du journal</label>
+      <select id="s-jlevel">
+        <option value="verbose">Verbeux — chaque changement de capteur/actionneur</option>
+        <option value="medium">Moyen — actions principales, warnings et erreurs</option>
+        <option value="errors">Erreurs — absences de réponse et erreurs seulement</option>
+      </select></div>
+    <div><label for="s-jret">Rétention du journal (jours)</label>
+      <input id="s-jret" type="number" min="1"></div>
+    <div class="fix"><button class="btn primary" id="s-save">Enregistrer les réglages</button></div>
+  </div>
+
+  <h2>Contrôleurs domotiques</h2>
+  <div id="conn-list"></div>
+  <div class="row" style="margin-top:.6rem">
+    <div class="fix"><button class="btn" id="conn-add-eedomus">+ Ajouter une box eedomus</button></div>
+    <div class="fix"><button class="btn" id="conn-add-wes">+ Ajouter un WES (MQTT)</button></div>
+  </div>
+
+  <h2>Périphériques</h2>
+  <p class="muted">Cochez les périphériques à surveiller (historisés au pas de collecte).
+     Pour les sorties, vous pouvez autoriser ou non leur pilotage, et cocher
+     « 0-100&nbsp;% » pour un pilotage en pourcentage (gradateur de lampe,
+     ouverture partielle de volet). Cliquez sur une icône pour la changer.</p>
+  <div class="row" style="max-width:420px">
+    <div><label for="dev-filter">Filtrer</label><input id="dev-filter" type="text" placeholder="nom, pièce, contrôleur…"></div>
+  </div>
+  <table>
+    <thead><tr><th>Surv.</th><th>Nom</th><th>Pièce</th><th>Contrôleur</th><th>Type</th>
+    <th>Unité</th><th>Pilotable</th><th>0-100&nbsp;%</th><th>Icônes on / off</th></tr></thead>
+    <tbody id="dev-body"></tbody>
+  </table>
+
+  <h2>Pages de visualisation</h2>
+  <p class="muted">Pages arborescentes : plusieurs pages racines possibles, sous-pages illimitées.
+     Fond paramétrable par page (couleur ou image). L'option « double rendu » permet de définir des
+     widgets différents pour smartphone et pour PC.</p>
+  <div id="pages-tree"></div>
+  <button class="btn" id="page-add-root" style="margin-top:.6rem">+ Nouvelle page racine</button>
+  <div id="widgets-editor" hidden>
+    <h2 id="we-title">Widgets de la page</h2>
+    <table>
+      <thead><tr><th>Ordre</th><th>Type</th><th>Contenu</th><th>Rendu</th><th>Libellé</th><th></th></tr></thead>
+      <tbody id="we-body"></tbody>
+    </table>
+    <button class="btn" id="we-add" style="margin-top:.6rem">+ Ajouter un widget</button>
+  </div>
+
+  <h2>Utilisateurs</h2>
+  <table><thead><tr><th>Utilisateur</th><th>Rôle</th><th></th></tr></thead>
+    <tbody id="users-body"></tbody></table>
+  <div class="row" style="margin-top:.6rem">
+    <div><label for="u-name">Nom d'utilisateur</label><input id="u-name" type="text"></div>
+    <div><label for="u-pass">Mot de passe</label><input id="u-pass" type="password"></div>
+    <div><label for="u-role">Rôle</label>
+      <select id="u-role"><option value="reader">Lecteur</option><option value="admin">Admin</option></select></div>
+    <div class="fix"><button class="btn" id="u-add">Créer</button></div>
+  </div>
+
+  <h2>Icônes et fonds de page</h2>
+  <div class="row">
+    <div><label>Ajouter une icône (SVG ou PNG)</label><input type="file" id="up-icon" accept=".svg,.png"></div>
+    <div><label>Ajouter un fond de page (JPG, PNG, WebP)</label><input type="file" id="up-bg" accept=".jpg,.jpeg,.png,.webp"></div>
+  </div>
+  <div class="icon-pick" id="icons-gallery" style="margin-top:.6rem"></div>
+</main>
+
+<dialog id="dlg"><div style="padding:1.1rem" id="dlg-body"></div></dialog>
+<script src="/static/js/admin.js"></script>
+</body>
+</html>

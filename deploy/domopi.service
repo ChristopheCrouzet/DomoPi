@@ -1,0 +1,26 @@
+[Unit]
+Description=DomoPi - serveur de supervision domotique
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=domopi
+Group=domopi
+WorkingDirectory=/opt/domopi
+Environment=DOMOPI_DB=/var/lib/domopi/domopi.db
+Environment=DOMOPI_SECRET=/var/lib/domopi/secret.key
+Environment=DOMOPI_STATIC=/opt/domopi/static
+EnvironmentFile=-/etc/domopi/domopi.env
+ExecStart=/opt/domopi/venv/bin/uvicorn domopi.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+# Durcissement
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/domopi /opt/domopi/static/icons /opt/domopi/static/backgrounds
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
