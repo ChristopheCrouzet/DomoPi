@@ -206,6 +206,12 @@ async def discover(cid: int, request: Request):
             (cid, d["external_id"], d["name"], d["kind"], d.get("unit", ""),
              d.get("room", ""), json.dumps(d.get("meta", {})),
              1 if d.get("dimmable") else 0))
+        # Le nom n'est pas écrasé à la re-découverte (renommages utilisateur),
+        # sauf s'il contient U+FFFD : nom corrompu par l'ancien bug d'encodage.
+        conn.execute(
+            "UPDATE devices SET name=? WHERE connector_id=? AND external_id=? "
+            "AND instr(name, ?) > 0",
+            (d["name"], cid, d["external_id"], "�"))
     conn.commit()
     journal.info("discover", f"{len(found)} périphériques découverts (connecteur {cid})")
     return {"count": len(found)}

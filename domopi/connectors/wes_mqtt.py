@@ -59,18 +59,26 @@ class WesMqttConnector(Connector):
             self._client.disconnect()
             self._client = None
 
+    @staticmethod
+    def _decode(payload: bytes) -> str:
+        """UTF-8 si valide, sinon Latin-1 (certains firmwares publient en Latin-1)."""
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return payload.decode("latin-1")
+
     def _on_message(self, client, userdata, msg):
         try:
             if msg.topic.endswith("/config"):
                 self._handle_config(msg)
             else:
                 with self._lock:
-                    self._values[msg.topic] = msg.payload.decode(errors="replace")
+                    self._values[msg.topic] = self._decode(msg.payload)
         except Exception as exc:
             journal.error(self.name, f"message MQTT invalide {msg.topic} : {exc}")
 
     def _handle_config(self, msg):
-        cfg = json.loads(msg.payload.decode())
+        cfg = json.loads(self._decode(msg.payload))
         parts = msg.topic.split("/")
         component = parts[1]                 # sensor, binary_sensor, switch...
         uid = cfg.get("unique_id") or cfg.get("uniq_id") or "/".join(parts[1:-1])

@@ -125,7 +125,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
 .btn.sm { padding: .2rem .55rem; font-size: .8rem; }
 .row { display: flex; gap: .6rem; align-items: end; flex-wrap: wrap; }
 .row > * { flex: 1; min-width: 130px; }
-.row > .fix { flex: 0; min-width: 0; }
+.row > .fix { flex: 0 0 auto; min-width: 0; }
 
 /* ---------------- tableaux ---------------- */
 table { width: 100%; border-collapse: collapse; font-size: .85rem; }

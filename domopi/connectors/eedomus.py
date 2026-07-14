@@ -36,7 +36,14 @@ class EedomusConnector(Connector):
         r = httpx.get(self.base_url, params=self._params(action=action, **kw),
                       timeout=TIMEOUT)
         r.raise_for_status()
-        data = json.loads(r.text)
+        # L'API locale répond en Latin-1 sans déclarer de charset : décoder
+        # nous-mêmes (UTF-8 si valide, sinon Latin-1) plutôt que r.text, qui
+        # suppose UTF-8 et remplace é/°/… par U+FFFD.
+        try:
+            text = r.content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = r.content.decode("latin-1")
+        data = json.loads(text)
         if data.get("success") != 1:
             raise RuntimeError(f"eedomus {action}: {data}")
         return data.get("body")
