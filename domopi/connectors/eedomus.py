@@ -77,19 +77,37 @@ class EedomusConnector(Connector):
         return out
 
     def poll(self, devices: list[dict]) -> dict[str, float | str]:
-        """Un seul periph.list par cycle : contient last_value pour chaque périph."""
-        body = self._call("periph.list")
-        by_id = {str(p.get("periph_id")): p for p in body or []}
+        """Valeurs courantes des périphériques demandés.
+
+        L'API cloud renvoie last_value dans periph.list, mais l'API LOCALE ne
+        le fournit pas : on tente d'abord periph.list (une seule requête, au
+        cas où le firmware le donne), puis periph.caract périphérique par
+        périphérique pour ceux restés sans valeur.
+        """
+        try:
+            body = self._call("periph.list")
+            by_id = {str(p.get("periph_id")): p for p in body or []}
+        except Exception as exc:
+            journal.debug(self.name, f"periph.list indisponible : {exc}")
+            by_id = {}
         values: dict[str, float | str] = {}
         for d in devices:
-            p = by_id.get(d["external_id"])
-            if p is None or p.get("last_value") in (None, ""):
+            v = (by_id.get(d["external_id"]) or {}).get("last_value")
+            if v in (None, ""):
+                try:
+                    c = self._call("periph.caract", periph_id=d["external_id"])
+                    v = (c or {}).get("last_value")
+                except Exception as exc:
+                    journal.debug(self.name,
+                                  f"periph.caract {d['external_id']} : {exc}")
+                    v = None
+            if v in (None, ""):
                 # le poller journalise l'absence de réponse à sa cadence ;
-                # ici (appelé aussi par le rafraîchissement 10 s) : debug.
+                # ici (appelé aussi par le rafraîchissement rapide) : debug.
                 journal.debug(self.name,
                               f"pas de réponse pour '{d['name']}' ({d['external_id']})")
                 continue
-            values[d["external_id"]] = p["last_value"]
+            values[d["external_id"]] = v
         return values
 
     def set_value(self, device: dict, value: str) -> bool:

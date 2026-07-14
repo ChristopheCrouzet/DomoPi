@@ -228,12 +228,14 @@ persistant, ex. MQTT). L'enregistrer dans `connectors/__init__.py:REGISTRY`.
 L'UI admin le proposera automatiquement si on ajoute aussi ses champs de
 config dans `static/js/admin.js:CONN_FIELDS` / `CONN_DEFAULTS`.
 
-- **eedomus** : un seul `periph.list` par cycle (contient `last_value` de tous
-  les périphériques → économe). Pas d'historique local côté box. Détection
-  actionneur par `usage_name`. Attention : lectures sur `/api/get`, commandes
-  sur **`/api/set`** (deux points d'entrée distincts) ; `set_value` traduit
-  on/off en 100/0. La box répond en Latin-1 sans le déclarer (décodage manuel
-  dans `_call`). Doc : https://doc.eedomus.com/en/index.php/API_eedomus
+- **eedomus** : `poll()` tente `periph.list` (une requête) mais l'API **locale**
+  n'y renvoie pas `last_value` (contrairement au cloud) → repli sur
+  `periph.caract` périphérique par périphérique. Pas d'historique local côté
+  box. Détection actionneur par `usage_name`. Attention : lectures sur
+  `/api/get`, commandes sur **`/api/set`** (deux points d'entrée distincts) ;
+  `set_value` traduit on/off en 100/0. La box répond en Latin-1 sans le
+  déclarer (décodage manuel dans `_call`).
+  Doc : https://doc.eedomus.com/en/index.php/API_eedomus
 - **wes_mqtt** : en réalité un client **Home Assistant MQTT Discovery**
   générique. Il s'abonne à `homeassistant/+/+/config` (et `+/+/+/config`),
   mémorise les entités et leurs `state_topic`, met en cache les derniers
