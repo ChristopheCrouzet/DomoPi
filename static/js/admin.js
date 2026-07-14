@@ -384,6 +384,16 @@
     dialog(`<h2 style="margin-top:0">${p.id ? "Modifier la page" : "Nouvelle page"}</h2>
       <label>Titre</label><input id="pf-title" type="text" value="${esc(p.title)}">
       <label>Page parente</label><select id="pf-parent">${parentOpts}</select>
+      <label>Icône (mini dans la barre du haut, en fond de la tuile de sous-vue)</label>
+      <div class="row">
+        <div class="fix"><img id="pf-icon-prev" alt=""
+          src="${p.icon ? "/static/icons/" + esc(p.icon) : ""}"
+          style="width:34px;height:34px;background:var(--panel-2);border-radius:6px;padding:3px"></div>
+        <div class="fix"><button type="button" class="btn" id="pf-icon-btn">Choisir…</button></div>
+        <div class="fix"><button type="button" class="btn" id="pf-icon-clear">Aucune</button></div>
+      </div>
+      <div class="icon-pick" id="pf-icon-gallery" hidden style="margin-top:.4rem">${icons.map(i =>
+        `<img src="/static/icons/${i}" data-i="${i}" title="${i}">`).join("")}</div>
       <label>Fond : image</label><select id="pf-bgimg">${bgOpts}</select>
       <label>Fond : couleur CSS (ex. #1a2430) — utilisé si aucune image</label>
       <input id="pf-bgcol" type="text" value="${p.background && p.background.startsWith("#") ? esc(p.background) : ""}">
@@ -393,12 +403,26 @@
       <div class="row" style="margin-top:1rem">
         <button class="btn primary" id="pf-save">Enregistrer</button>
         <button class="btn" id="pf-cancel">Annuler</button></div>`, dlg => {
+      let pfIcon = p.icon || "";
+      dlg.querySelector("#pf-icon-btn").onclick = () => {
+        const g = dlg.querySelector("#pf-icon-gallery"); g.hidden = !g.hidden;
+      };
+      dlg.querySelector("#pf-icon-clear").onclick = () => {
+        pfIcon = ""; dlg.querySelector("#pf-icon-prev").src = "";
+        dlg.querySelector("#pf-icon-gallery").hidden = true;
+      };
+      dlg.querySelectorAll("#pf-icon-gallery img").forEach(img => img.onclick = () => {
+        pfIcon = img.dataset.i;
+        dlg.querySelector("#pf-icon-prev").src = "/static/icons/" + pfIcon;
+        dlg.querySelector("#pf-icon-gallery").hidden = true;
+      });
       dlg.querySelector("#pf-cancel").onclick = () => dlg.close();
       dlg.querySelector("#pf-save").onclick = async () => {
         const body = {
           title: dlg.querySelector("#pf-title").value || "Sans titre",
           parent_id: dlg.querySelector("#pf-parent").value ? +dlg.querySelector("#pf-parent").value : null,
           background: dlg.querySelector("#pf-bgimg").value || dlg.querySelector("#pf-bgcol").value,
+          icon: pfIcon,
           dual_layout: dlg.querySelector("#pf-dual").checked,
           sort_order: +dlg.querySelector("#pf-order").value || 0 };
         if (p.id) await api(`/api/pages/${p.id}`, { method: "PUT", body: JSON.stringify(body) });

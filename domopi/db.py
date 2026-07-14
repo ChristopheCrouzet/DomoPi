@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS pages(
   parent_id INTEGER REFERENCES pages(id) ON DELETE CASCADE,  -- NULL = racine
   title TEXT NOT NULL,
   background TEXT DEFAULT '',                  -- couleur CSS ou /backgrounds/xxx
+  icon TEXT DEFAULT '',                        -- icône associée (nav + tuile lien)
   dual_layout INTEGER NOT NULL DEFAULT 0,      -- variantes mobile/PC séparées
   sort_order INTEGER NOT NULL DEFAULT 0
 );
@@ -129,6 +130,9 @@ def init_db():
         conn.execute("ALTER TABLE devices ADD COLUMN dimmable INTEGER NOT NULL DEFAULT 0")
     if "hidden" not in cols:
         conn.execute("ALTER TABLE devices ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+    pcols = {r["name"] for r in conn.execute("PRAGMA table_info(pages)").fetchall()}
+    if "icon" not in pcols:
+        conn.execute("ALTER TABLE pages ADD COLUMN icon TEXT DEFAULT ''")
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (k, v))
     conn.commit()

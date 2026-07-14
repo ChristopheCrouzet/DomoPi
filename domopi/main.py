@@ -394,10 +394,11 @@ async def create_page(request: Request):
     auth.require_admin(request)
     b = await request.json()
     cur = db.get_conn().execute(
-        "INSERT INTO pages(parent_id,title,background,dual_layout,sort_order) "
-        "VALUES(?,?,?,?,?)",
+        "INSERT INTO pages(parent_id,title,background,icon,dual_layout,sort_order) "
+        "VALUES(?,?,?,?,?,?)",
         (b.get("parent_id"), b.get("title", "Nouvelle page"), b.get("background", ""),
-         1 if b.get("dual_layout") else 0, int(b.get("sort_order", 0))))
+         b.get("icon", ""), 1 if b.get("dual_layout") else 0,
+         int(b.get("sort_order", 0))))
     db.get_conn().commit()
     journal.info("pages", f"page créée : {b.get('title','')}")
     return {"id": cur.lastrowid}
@@ -410,10 +411,11 @@ async def update_page(pid: int, request: Request):
     if b.get("parent_id") == pid:
         raise HTTPException(400, "Une page ne peut pas être son propre parent")
     db.get_conn().execute(
-        "UPDATE pages SET parent_id=?, title=?, background=?, dual_layout=?, "
-        "sort_order=? WHERE id=?",
+        "UPDATE pages SET parent_id=?, title=?, background=?, icon=?, "
+        "dual_layout=?, sort_order=? WHERE id=?",
         (b.get("parent_id"), b.get("title", ""), b.get("background", ""),
-         1 if b.get("dual_layout") else 0, int(b.get("sort_order", 0)), pid))
+         b.get("icon", ""), 1 if b.get("dual_layout") else 0,
+         int(b.get("sort_order", 0)), pid))
     db.get_conn().commit()
     return {"ok": True}
 
@@ -431,7 +433,8 @@ async def list_widgets(pid: int, request: Request):
     auth.require_user(request)
     rows = db.get_conn().execute(
         "SELECT w.*, d.name AS device_name, d.kind, d.unit, d.icon_on, d.icon_off, "
-        "d.controllable, d.last_value, d.last_seen, p2.title AS target_title "
+        "d.controllable, d.last_value, d.last_seen, p2.title AS target_title, "
+        "p2.icon AS target_icon "
         "FROM widgets w LEFT JOIN devices d ON d.id=w.device_id "
         "LEFT JOIN pages p2 ON p2.id=w.target_page_id "
         "WHERE w.page_id=? ORDER BY w.sort_order, w.id", (pid,)).fetchall()

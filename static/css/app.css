@@ -113,6 +113,15 @@ input[type=range] { accent-color: var(--amber); }
 .card .stale { color: var(--err); font-size: .72rem; text-align: center; }
 .card.link { align-items: center; justify-content: center; border-style: dashed; }
 .card.link .name { color: var(--txt); font-size: .95rem; }
+/* tuile lien : dossier au premier plan, icône de page derrière à 50 % */
+.card.link .lstack { position: relative; width: 46px; height: 46px;
+  display: flex; align-items: center; justify-content: center; }
+.card.link .lstack img { position: absolute; inset: 2px;
+  width: 42px; height: 42px; opacity: .5; }
+.card.link .lstack .folder { position: relative; font-size: 1.5rem;
+  filter: drop-shadow(0 0 3px rgba(0,0,0,.65)); }
+#root-nav .navicon { width: 16px; height: 16px; vertical-align: -3px;
+  margin-right: .3rem; }
 
 /* ---------------- graphes ---------------- */
 .chart-box { background: color-mix(in srgb, var(--panel) 92%, transparent);

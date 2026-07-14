@@ -72,7 +72,14 @@
     const nav = $("#root-nav"); nav.innerHTML = "";
     for (const p of rootPages()) {
       const a = document.createElement("a");
-      a.href = "#" + p.id; a.textContent = p.title;
+      a.href = "#" + p.id;
+      if (p.icon) {
+        const im = document.createElement("img");
+        im.className = "navicon"; im.alt = "";
+        im.src = "/static/icons/" + p.icon;
+        a.appendChild(im);
+      }
+      a.appendChild(document.createTextNode(p.title));
       a.onclick = e => { e.preventDefault(); openPage(p.id); };
       nav.appendChild(a);
     }
@@ -121,10 +128,11 @@
     const grid = document.createElement("div"); grid.className = "grid";
     frag.appendChild(grid);
 
-    for (const k of kids) grid.appendChild(linkCard(k.title, () => openPage(k.id)));
+    for (const k of kids) grid.appendChild(linkCard(k.title, k.icon, () => openPage(k.id)));
     for (const w of widgets) {
       if (w.wtype === "pagelink" && w.target_page_id)
         grid.appendChild(linkCard(w.options.label || w.target_title || "Page",
+                                  w.target_icon || "",
                                   () => openPage(w.target_page_id)));
       else if (w.wtype === "label") {
         const c = document.createElement("div");
@@ -199,10 +207,14 @@
   const ack = id => { setTimeout(() => ackRefresh(id), 300);
                       setTimeout(() => ackRefresh(id), 2000); };
 
-  function linkCard(label, onClick) {
+  function linkCard(label, icon, onClick) {
     const c = document.createElement("div");
     c.className = "card link clickable"; c.tabIndex = 0;
-    c.innerHTML = `<div class="name">📁 ${label}</div>`;
+    // Dossier par défaut ; si une icône est associée à la page cible, elle
+    // apparaît derrière le dossier, à 50 % d'opacité, centrée comme les tuiles.
+    c.innerHTML = `<div class="lstack">${icon
+        ? `<img src="/static/icons/${icon}" alt="">` : ""}<span class="folder">📁</span></div>
+      <div class="name">${label}</div>`;
     c.onclick = onClick;
     c.onkeydown = e => { if (e.key === "Enter") onClick(); };
     return c;
