@@ -119,5 +119,6 @@ class EedomusConnector(Connector):
             journal.info(self.name, f"pilotage '{device['name']}' -> {v}")
             return True
         except Exception as exc:
+            self.last_error = str(exc)
             journal.error(self.name, f"échec pilotage '{device['name']}' : {exc}")
             return False

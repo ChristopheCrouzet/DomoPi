@@ -254,17 +254,19 @@
   function openDimmer(d, current) {
     const dlg = $("#zoom-dlg"), body = $("#zoom-body");
     body.innerHTML = `<h2 style="margin-top:0">${d.name}</h2>
-      <div style="display:flex;align-items:center;gap:.8rem">
-        <input type="range" id="dim-slider" min="0" max="100" step="1"
-               value="${current}" style="flex:1">
-        <span class="value" id="dim-val"
-              style="font-family:var(--mono);min-width:3.6em;text-align:right">${current} %</span>
+      <div class="value" id="dim-val" style="text-align:center;font-size:1.6rem;
+           font-family:var(--mono);margin:.2rem 0 .5rem">${current} %</div>
+      <input type="range" id="dim-slider" min="0" max="100" step="1"
+             value="${current}" style="width:100%;height:2.4rem;touch-action:none">
+      <div style="display:flex;justify-content:space-between" class="muted">
+        <span>0 %</span><span>100 %</span></div>
+      <div class="row" style="margin-top:.7rem">
+        ${[0, 25, 50, 75, 100].map(p =>
+          `<button class="btn" data-pct="${p}" style="flex:1;min-width:0;padding:.45rem 0">${p}</button>`).join("")}
       </div>
-      <div class="row" style="margin-top:1rem">
-        <button class="btn" id="dim-off">Arrêt (0 %)</button>
-        <button class="btn" id="dim-on">Pleine ouverture (100 %)</button>
-        <button class="btn primary" id="dim-apply">Appliquer</button>
-        <button class="btn" id="dim-close">Fermer</button>
+      <div class="row" style="margin-top:.8rem">
+        <button class="btn primary" id="dim-apply" style="flex:2">Appliquer</button>
+        <button class="btn" id="dim-close" style="flex:1">Fermer</button>
       </div>`;
     const slider = $("#dim-slider");
     slider.oninput = () => $("#dim-val").textContent = slider.value + " %";
@@ -277,9 +279,11 @@
         setTimeout(refreshValues, 2500);
       } catch (e) { toast("Échec : " + e.message); }
     };
+    body.querySelectorAll("[data-pct]").forEach(b =>
+      b.onclick = () => { slider.value = b.dataset.pct;
+                          $("#dim-val").textContent = b.dataset.pct + " %";
+                          send(b.dataset.pct); });
     $("#dim-apply").onclick = () => send(slider.value);
-    $("#dim-off").onclick = () => send(0);
-    $("#dim-on").onclick = () => send(100);
     $("#dim-close").onclick = () => dlg.close();
     dlg.showModal();
   }

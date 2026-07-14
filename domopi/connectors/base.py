@@ -15,6 +15,7 @@ class Connector:
         self.id = connector_id
         self.name = name
         self.config = config
+        self.last_error = ""   # détail du dernier échec de set_value (pour l'API)
 
     def start(self):
         """Démarrage (connexion MQTT, etc.). Optionnel."""

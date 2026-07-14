@@ -197,6 +197,7 @@ class WesMqttConnector(Connector):
     def set_value(self, device: dict, value: str) -> bool:
         meta = device.get("meta", {})
         if not self._client:
+            self.last_error = "client MQTT indisponible"
             journal.error(self.name, f"client MQTT indisponible pour '{device['name']}'")
             return False
         # Valeur numérique 0-100 -> topic de position (volet) ou de luminosité
@@ -210,6 +211,7 @@ class WesMqttConnector(Connector):
             return True
         topic = meta.get("command_topic", "")
         if not topic:
+            self.last_error = "pas de command_topic pour ce périphérique"
             journal.error(self.name, f"pas de command_topic pour '{device['name']}'")
             return False
         payload = {"on": meta.get("payload_on", "ON"),

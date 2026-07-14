@@ -308,7 +308,9 @@ async def set_device(did: int, request: Request):
     dev = dict(row) | {"meta": json.loads(row["meta"])}
     ok = await asyncio.to_thread(inst.set_value, dev, str(b.get("value", "")))
     if not ok:
-        raise HTTPException(502, "Échec de la commande")
+        detail = getattr(inst, "last_error", "")
+        raise HTTPException(502, f"Échec de la commande — {detail}" if detail
+                            else "Échec de la commande")
     return {"ok": True}
 
 
