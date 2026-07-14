@@ -83,11 +83,15 @@
         try {
           const r = await api(`/api/connectors/${c.id}/discover`);
           toast(`${r.count} périphériques découverts`);
-          if (!r.count && c.type === "wes_mqtt") wesMqttHelp(c, null);
+          if (!r.count && c.type === "wes_mqtt") {
+            // Deux pannes distinctes : DomoPi <-> broker local, ou WES <-> broker.
+            if (r.broker_connected === false) brokerHelp(c);
+            else wesMqttHelp(c, null, r.server_ip);
+          }
           loadDevices();
         } catch (e) {
           toast("Échec : " + e.message);
-          if (c.type === "wes_mqtt") wesMqttHelp(c, e.message);
+          if (c.type === "wes_mqtt") brokerHelp(c, e.message);
         }
         ev.target.disabled = false; ev.target.textContent = "Découvrir les périphériques";
       };
@@ -118,16 +122,49 @@
       };
     });
   }
-  /* Aide affichée quand la découverte WES ne trouve rien : reprend la
-     présentation de la page « Configuration MQTT » du WES (MQTTCFG.HTM)
-     avec les valeurs attendues, préremplies depuis le connecteur. */
-  function wesMqttHelp(c, errMsg) {
+  /* Aide affichée quand DomoPi lui-même n'est pas connecté au broker MQTT
+     (le problème est en amont du WES : sa config n'y changerait rien). */
+  function brokerHelp(c, errMsg) {
+    const cfg = c.config || {};
+    dialog(`<h2 style="margin-top:0">DomoPi n'est pas connecté au broker MQTT</h2>
+      ${errMsg ? `<p class="muted">Erreur : ${esc(errMsg)}</p>` : ""}
+      <p>La découverte ne peut rien recevoir : c'est la connexion entre
+         <b>DomoPi et le broker Mosquitto</b> qui échoue — inutile de toucher
+         au WES pour l'instant. Vérifiez, via « Configurer » :</p>
+      <ul style="line-height:1.6">
+        <li><b>Broker MQTT</b> : <span class="mono">${esc(cfg.host || "127.0.0.1")}</span>
+            (Mosquitto local du Raspberry = <span class="mono">127.0.0.1</span>),
+            port <span class="mono">${esc(cfg.port || 1883)}</span> ;</li>
+        <li><b>Utilisateur / mot de passe MQTT</b> : <u>obligatoires</u> — le
+            broker refuse les connexions anonymes. Ce sont les identifiants
+            MQTT choisis à l'installation de DomoPi
+            ${cfg.username ? "" : "(le champ utilisateur est actuellement vide)"} ;</li>
+        <li>le service sur le Pi : <span class="mono">systemctl status mosquitto</span> ;</li>
+        <li>le <b>Journal</b> (bandeau) : « connexion refusée » = identifiants
+            incorrects, « injoignable » = hôte/port ou service arrêté.</li>
+      </ul>
+      <p>Après correction, ré-enregistrez le connecteur (il se reconnecte
+         aussitôt), attendez quelques secondes puis relancez la découverte.
+         Si vous venez tout juste d'ajouter le connecteur, la connexion peut
+         simplement ne pas être encore établie : réessayez.</p>
+      <div class="row" style="margin-top:.8rem">
+        <div class="fix"><button class="btn" id="bh-close">Fermer</button></div>
+      </div>`, dlg => {
+      dlg.querySelector("#bh-close").onclick = () => dlg.close();
+    });
+  }
+
+  /* Aide affichée quand la découverte WES ne trouve rien alors que DomoPi
+     est bien connecté au broker : reprend la présentation de la page
+     « Configuration MQTT » du WES (MQTTCFG.HTM) avec les valeurs attendues,
+     préremplies depuis le connecteur. serverIp = IPv4 LAN du Pi (API). */
+  function wesMqttHelp(c, errMsg, serverIp) {
     const cfg = c.config || {};
     const isIp = h => /^\d{1,3}(\.\d{1,3}){3}$/.test(h);
     let broker = cfg.host;
     if (!broker || broker === "127.0.0.1" || broker === "localhost")
-      broker = isIp(location.hostname) ? location.hostname
-                                       : "l'adresse IPv4 du Raspberry";
+      broker = serverIp || (isIp(location.hostname) ? location.hostname
+                                                    : "l'adresse IPv4 du Raspberry");
     const px = cfg.discovery_prefix || "homeassistant";
     dialog(`<h2 style="margin-top:0">Aucun périphérique WES découvert</h2>
       ${errMsg ? `<p class="muted">Erreur : ${esc(errMsg)}</p>` : ""}
@@ -144,9 +181,13 @@
               <small>Indiquez une adresse IP : le WES ne sait pas résoudre les
               noms Windows du réseau local (type PI-SERVER).</small></td></tr>
             <tr><th>Port du broker</th><td class="mono">${esc(cfg.port || 1883)}</td></tr>
-            <tr><th>Username</th><td class="mono">${esc(cfg.username || "(aucun)")}</td></tr>
-            <tr><th>Password</th><td>le même que dans le connecteur DomoPi
-              (identifiants MQTT définis à l'installation)</td></tr>
+            <tr><th>Username</th><td>${cfg.username
+              ? `<b class="mono">${esc(cfg.username)}</b>`
+              : `<b>requis</b> — le broker refuse les connexions anonymes ;
+                 utilisez les identifiants MQTT choisis à l'installation
+                 (et renseignez-les aussi dans le connecteur DomoPi)`}</td></tr>
+            <tr><th>Password</th><td>le mot de passe MQTT associé
+              (identifiants définis à l'installation du broker)</td></tr>
             <tr><th>Keep-alive (secondes)</th><td class="mono">60</td></tr>
             <tr><th>QoS par défaut</th><td>0 - Au plus une fois</td></tr>
             <tr class="crucial"><th>MQTT Discovery</th>

@@ -8,6 +8,7 @@ import asyncio
 import json
 import os
 import re
+import socket
 import time
 
 from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File
@@ -184,6 +185,18 @@ async def delete_connector(cid: int, request: Request):
     return {"ok": True}
 
 
+def _lan_ip() -> str:
+    """IPv4 LAN du serveur (connexion UDP fictive : choisit juste la route)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 9))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return ""
+
+
 @app.get("/api/connectors/{cid}/discover")
 async def discover(cid: int, request: Request):
     """Découverte + import (mise à jour) des périphériques du connecteur."""
@@ -214,7 +227,14 @@ async def discover(cid: int, request: Request):
             (d["name"], cid, d["external_id"], "�"))
     conn.commit()
     journal.info("discover", f"{len(found)} périphériques découverts (connecteur {cid})")
-    return {"count": len(found)}
+    resp: dict = {"count": len(found)}
+    # Pour les connecteurs MQTT : état de la connexion DomoPi <-> broker et
+    # IP LAN du Pi, utilisés par l'aide à la configuration côté client.
+    bc = getattr(inst, "broker_connected", None)
+    if bc is not None:
+        resp["broker_connected"] = bc
+        resp["server_ip"] = _lan_ip()
+    return resp
 
 
 # ================================================================ périphériques

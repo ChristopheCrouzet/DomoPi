@@ -31,8 +31,14 @@ class WesMqttConnector(Connector):
         super().__init__(connector_id, name, config)
         self._client: mqtt.Client | None = None
         self._lock = threading.Lock()
+        self._connected = False                  # état DomoPi <-> broker
         self._discovered: dict[str, dict] = {}   # external_id -> descriptor
         self._values: dict[str, str] = {}        # state_topic -> payload brut
+
+    @property
+    def broker_connected(self) -> bool:
+        """Vrai si DomoPi est actuellement connecté au broker MQTT."""
+        return self._connected
 
     # ------------------------------------------------------------- MQTT
     def start(self):
@@ -43,11 +49,29 @@ class WesMqttConnector(Connector):
                         client_id=f"domopi-{self.id}")
         if self.config.get("username"):
             c.username_pw_set(self.config["username"], self.config.get("password", ""))
-        c.on_connect = lambda cl, ud, fl, rc, pr=None: (
-            cl.subscribe([(f"{prefix}/+/+/config", 0), (f"{prefix}/+/+/+/config", 0)]),
-            journal.info(self.name, "connecté au broker MQTT"))
+
+        def on_connect(cl, ud, flags, rc, props=None):
+            if getattr(rc, "is_failure", False) or (isinstance(rc, int) and rc != 0):
+                self._connected = False
+                journal.error(self.name, f"connexion au broker MQTT refusée : {rc} "
+                                         "(identifiants MQTT du connecteur ?)")
+                return
+            self._connected = True
+            cl.subscribe([(f"{prefix}/+/+/config", 0), (f"{prefix}/+/+/+/config", 0)])
+            journal.info(self.name, "connecté au broker MQTT")
+
+        def on_disconnect(*a):
+            self._connected = False
+            journal.warning(self.name, "broker MQTT déconnecté")
+
+        def on_connect_fail(*a):
+            self._connected = False
+            journal.error(self.name, "broker MQTT injoignable (hôte/port ?)")
+
+        c.on_connect = on_connect
         c.on_message = self._on_message
-        c.on_disconnect = lambda *a: journal.warning(self.name, "broker MQTT déconnecté")
+        c.on_disconnect = on_disconnect
+        c.on_connect_fail = on_connect_fail
         c.connect_async(self.config.get("host", "127.0.0.1"),
                         int(self.config.get("port", 1883)), keepalive=60)
         c.loop_start()
@@ -58,6 +82,7 @@ class WesMqttConnector(Connector):
             self._client.loop_stop()
             self._client.disconnect()
             self._client = None
+        self._connected = False
 
     @staticmethod
     def _decode(payload: bytes) -> str:
