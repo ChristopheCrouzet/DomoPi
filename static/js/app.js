@@ -180,6 +180,21 @@
       if (w) el.replaceWith(deviceCard(w));
     });
   }
+  /* Acquittement d'une commande : relit rapidement le périphérique concerné
+     (0,3 s puis 2 s) pour que l'icône reflète l'action sans attendre. */
+  async function ackRefresh(id) {
+    try {
+      const rows = await api("/api/devices/refresh", { method: "POST",
+        body: JSON.stringify({ ids: [id] }) });
+      rows.forEach(r => {
+        const d = devices[r.id];
+        if (d) { d.last_value = r.last_value; d.last_seen = r.last_seen; }
+      });
+      refreshDeviceCards();
+    } catch { /* silencieux */ }
+  }
+  const ack = id => { setTimeout(() => ackRefresh(id), 300);
+                      setTimeout(() => ackRefresh(id), 2000); };
 
   function linkCard(label, onClick) {
     const c = document.createElement("div");
@@ -233,7 +248,7 @@
           await api(`/api/devices/${d.id}/set`, { method: "POST",
             body: JSON.stringify({ value: target }) });
           toast(`${d.name} → ${target === "on" ? "marche" : "arrêt"}`);
-          setTimeout(refreshValues, 2500);
+          ack(d.id);
         } catch (e) { toast("Échec : " + e.message); }
       };
       if (d.dimmable) {
@@ -279,7 +294,8 @@
   /* Curseur 0-100 % pour gradateurs et ouvertures partielles */
   function openDimmer(d, current) {
     const dlg = $("#zoom-dlg"), body = $("#zoom-body");
-    body.innerHTML = `<h2 style="margin-top:0">${d.name}</h2>
+    body.innerHTML = `<button class="dlg-x" id="dim-close" title="Fermer">✕</button>
+      <h2 style="margin-top:0">${d.name}</h2>
       <div class="value" id="dim-val" style="text-align:center;font-size:1.6rem;
            font-family:var(--mono);margin:.2rem 0 .5rem">${current} %</div>
       <input type="range" id="dim-slider" min="0" max="100" step="1"
@@ -291,10 +307,7 @@
           `<button class="btn" data-pct="${p}" style="flex:1;min-width:0;padding:.45rem 0">${p}</button>`).join("")}
       </div>
       <p class="muted" style="margin:.6rem 0 0;font-size:.8rem">La consigne part
-        automatiquement 1,5&nbsp;s après le relâchement du curseur.</p>
-      <div class="row" style="margin-top:.6rem">
-        <button class="btn" id="dim-close" style="flex:1">Fermer</button>
-      </div>`;
+        automatiquement 1,5&nbsp;s après le relâchement du curseur.</p>`;
     const slider = $("#dim-slider");
     let sendTimer = null;
     const send = async v => {
@@ -304,7 +317,7 @@
           body: JSON.stringify({ value: String(v) }) });
         toast(`${d.name} → ${v} %`);
         dlg.close();
-        setTimeout(refreshValues, 2500);
+        ack(d.id);
       } catch (e) { toast("Échec : " + e.message); }
     };
     slider.oninput = () => {              // en cours de glissement : annule l'envoi
@@ -361,12 +374,11 @@
   function openZoom(d) {
     const dlg = $("#zoom-dlg"), body = $("#zoom-body");
     body.innerHTML = "";
+    const x = document.createElement("button");
+    x.className = "dlg-x"; x.textContent = "✕"; x.title = "Fermer";
+    x.onclick = () => dlg.close();
+    body.appendChild(x);
     body.appendChild(graphWidget({ device_id: d.id, options: { label: d.name, range_s: 86400 } }));
-    const close = document.createElement("button");
-    close.className = "btn sm"; close.textContent = "Fermer";
-    close.style.marginTop = ".6rem";
-    close.onclick = () => dlg.close();
-    body.appendChild(close);
     dlg.showModal();
   }
 

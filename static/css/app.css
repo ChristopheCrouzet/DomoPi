@@ -192,6 +192,12 @@ dialog { background: var(--panel); color: var(--txt); border: 1px solid var(--li
 .wes-help .dot { display: inline-block; width: .8rem; height: .8rem;
   border-radius: 50%; vertical-align: -.08rem; }
 dialog::backdrop { background: rgba(0,0,0,.6); }
+/* bouton de fermeture [X] en haut à droite des dialogues */
+.dlg-x { position: absolute; top: .45rem; right: .55rem; z-index: 1;
+  background: transparent; border: 1px solid transparent; color: var(--muted);
+  font-size: 1.05rem; line-height: 1; padding: .3rem .5rem; border-radius: 6px;
+  cursor: pointer; }
+.dlg-x:hover { color: var(--txt); border-color: var(--line); background: var(--panel-2); }
 @media (max-width: 700px) {
   main { padding: .6rem; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: .5rem; }
