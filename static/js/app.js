@@ -158,6 +158,10 @@
         grid.appendChild(linkCard(w.options.label || w.target_title || "Page",
                                   w.target_icon || "",
                                   () => openPage(w.target_page_id)));
+      else if (w.wtype === "weblink" && w.options.url)
+        grid.appendChild(linkCard(
+          w.options.label || w.options.url.replace(/^https?:\/\//, ""),
+          w.options.icon || "", () => openEmbed(w), "🌐"));
       else if (w.wtype === "label") {
         const c = document.createElement("div");
         c.className = "card wide"; c.style.minHeight = "0";
@@ -244,17 +248,51 @@
   const ack = id => { setTimeout(() => ackRefresh(id), 300);
                       setTimeout(() => ackRefresh(id), 2000); };
 
-  function linkCard(label, icon, onClick) {
+  function linkCard(label, icon, onClick, badge) {
     const c = document.createElement("div");
     c.className = "card link clickable"; c.tabIndex = 0;
-    // Dossier par défaut ; si une icône est associée à la page cible, elle
-    // apparaît derrière le dossier, à 50 % d'opacité, centrée comme les tuiles.
+    // Dossier par défaut (🌐 pour une page web externe) ; si une icône est
+    // associée à la cible, elle apparaît derrière, à 50 % d'opacité.
     c.innerHTML = `<div class="lstack">${icon
-        ? `<img src="/static/icons/${icon}" alt="">` : ""}<span class="folder">📁</span></div>
+        ? `<img src="/static/icons/${icon}" alt="">` : ""}<span class="folder">${badge || "📁"}</span></div>
       <div class="name">${label}</div>`;
     c.onclick = onClick;
     c.onkeydown = e => { if (e.key === "Enter") onClick(); };
     return c;
+  }
+
+  /* ------------------------------------------------ page web encapsulée */
+  /* Ouvre la cible d'un widget « page web externe » dans une iframe sous le
+     bandeau, avec une barre Retour. currentPage passe à null pour suspendre
+     le cycle de rafraîchissement 60 s (sinon il écraserait l'iframe). Une
+     cible http:// vue depuis une page https:// serait bloquée (contenu
+     mixte) : elle passe alors par le relais same-origin /ext/{widget}/ —
+     de même dès que la cible demande une authentification (identifiants
+     stockés côté serveur, ou boîte de connexion du navigateur : les deux
+     ne fonctionnent qu'à travers le relais). */
+  function openEmbed(w) {
+    const backTo = currentPage;
+    currentPage = null; currentWidgets = [];
+    liveTimers.forEach(clearInterval); liveTimers = [];
+    const url = w.options.url;
+    let src = url;
+    if (w.options.auth_user || w.options.has_auth ||
+        (location.protocol === "https:" && url.startsWith("http:"))) {
+      try { const u = new URL(url); src = `/ext/${w.id}${u.pathname}${u.search}`; }
+      catch { /* URL invalide : l'iframe affichera l'erreur */ }
+    }
+    const main = $("#main");
+    main.innerHTML = "";
+    const bar = document.createElement("div");
+    bar.className = "embed-bar";
+    bar.innerHTML = `<button class="btn" id="emb-back">‹ Retour</button>
+      <span class="title">${w.options.label || url}</span>
+      <a class="btn" href="${url}" target="_blank" rel="noopener"
+         title="Ouvrir dans un nouvel onglet">↗</a>`;
+    const fr = document.createElement("iframe");
+    fr.className = "embed-frame"; fr.src = src;
+    main.appendChild(bar); main.appendChild(fr);
+    bar.querySelector("#emb-back").onclick = () => openPage(backTo);
   }
 
   /* ------------------------------------------------ widget périphérique */

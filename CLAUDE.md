@@ -204,6 +204,13 @@ serveur). Exemples : gradateur 0-100 %, consigne 12-25 °C par 0.5 avec boutons
   fois, marqué par le réglage `default_scale_id` — création d'une échelle
   « 0 - 100 % » (boutons 0/25/50/75/100) affectée aux devices `dimmable=1`
   (avec unité `%` posée si vide, pour préserver l'affichage).
+- **Échelles fournies par un connecteur** : `discover()` peut joindre une clé
+  `scale` (spec complète, voir `base.py`) à un périphérique — l'import crée
+  l'échelle si aucune de ce nom n'existe et l'affecte aux **nouveaux**
+  périphériques. Une échelle existante n'est jamais modifiée ni dupliquée
+  (retouches utilisateur conservées ; la supprimer pour qu'elle soit recréée
+  depuis le connecteur). C'est le mécanisme des énumérations Yamaha
+  (« Yamaha - Sleep / Entrée / Surround »).
 - **Découverte** : `dimmable` reste l'heuristique (eedomus : `usage_name`
   contient volet/shutter/variateur/dimmer/store ; WES/HA : présence de
   `set_position_topic`/`brightness_command_topic`) — un **nouveau** périphérique
@@ -265,6 +272,21 @@ config dans `static/js/admin.js:CONN_FIELDS` / `CONN_DEFAULTS`.
   `set_value` traduit on/off en 100/0. La box répond en Latin-1 sans le
   déclarer (décodage manuel dans `_call`).
   Doc : https://doc.eedomus.com/en/index.php/API_eedomus
+- **yamaha** : amplis AV Yamaha via l'API **YNC** (XML sur HTTP,
+  `POST /YamahaRemoteControl/ctrl` — testé sur RX-V773). Liste fixe de 12
+  périphériques : `system_power`/`main_power`/`zone2_power`/`enhancer`
+  (on/off), `main_volume` (0-100 % marqué `dimmable` → échelle 0-100 %
+  par défaut), `sleep`/`input`/`surround` (énumérations livrées avec une
+  échelle dédiée « Yamaha - … » boutons seuls, créée à l'import via la clé
+  `scale` de `discover()` — l'utilisateur peut ensuite l'éditer, elle n'est
+  jamais recréée tant qu'elle existe), `scene_1..4` (impulsions : « on »
+  lance la scène, pas d'état relisible, poll retombe à 0). La liste des
+  entrées (avec libellés personnalisés) est lue sur l'ampli
+  (`Input_Sel_Item`, ordre stable → codes 1..N, Napster exclu, 20 max) ;
+  les 19 programmes DSP sont codés en dur dans l'ordre du `desc.xml`.
+  Volume converti % <-> dB sur la plage `vol_min_db`/`vol_max_db` de la
+  config (défaut -80.5/+16.5, pas de 0.5 dB). Piloter volume/entrée/
+  programme exige l'ampli allumé (RC=4 sinon).
 - **wes_mqtt** : en réalité un client **Home Assistant MQTT Discovery**
   générique. Il s'abonne à `homeassistant/+/+/config` (et `+/+/+/config`),
   mémorise les entités et leurs `state_topic`, met en cache les derniers
@@ -282,6 +304,21 @@ validés (nom `[A-Za-z0-9._-]`, extension, taille).
 
 `SETTABLE` (main.py) liste les clés de réglage modifiables via l'API — l'étendre
 si on ajoute un réglage.
+
+`/ext/{widget_id}/{chemin}` (hors `/api`, connecté) : relais same-origin des
+widgets « page web externe » (`wtype='weblink'`, `options.url`, tuile 🌐 qui
+ouvre la cible dans une iframe sous le bandeau). Sert à encapsuler dans une
+iframe une cible **http** du LAN alors que DomoPi est servi en HTTPS (sinon
+contenu mixte bloqué par le navigateur). Restreint à l'origine de l'URL du
+widget ; GET/POST seulement, pas de WebSocket, cookies de la cible non
+relayés — les pages très dynamiques (ex. interface d'un ampli Yamaha) ne
+passent pas : préférer alors un connecteur dédié. Authentification HTTP Basic
+de la cible : statique (`options.auth_user`/`auth_pass`, saisis dans l'admin —
+**jamais renvoyés aux lecteurs** par `GET /widgets`, remplacés par le drapeau
+`has_auth`) ou dynamique (Authorization du navigateur transmis, défi 401
+`WWW-Authenticate` relayé → boîte de connexion native). Le visualiseur passe
+par le relais si les protocoles page / cible divergent **ou** si la cible a
+une authentification ; sinon l'iframe pointe directement sur l'URL.
 
 ## Frontend
 

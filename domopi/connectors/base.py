@@ -24,7 +24,14 @@ class Connector:
         """Arrêt propre. Optionnel."""
 
     def discover(self) -> list[dict]:
-        """Liste de dicts : external_id, name, kind, unit, room, meta."""
+        """Liste de dicts : external_id, name, kind, unit, room, meta.
+
+        Clés optionnelles : dimmable (bool — échelle 0-100 % par défaut
+        affectée à l'import) ; scale (dict {name, vmin, vmax, step,
+        hide_slider, toggle_click, stops...} — échelle dédiée, créée par
+        l'import si aucune échelle de ce nom n'existe, puis affectée aux
+        nouveaux périphériques ; les énumérations Yamaha s'en servent).
+        """
         raise NotImplementedError
 
     def poll(self, devices: list[dict]) -> dict[str, float | str]:

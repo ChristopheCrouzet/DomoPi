@@ -10,6 +10,9 @@ import os
 import re
 import socket
 import time
+from urllib.parse import urlsplit
+
+import httpx
 
 from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
@@ -241,8 +244,33 @@ async def discover(cid: int, request: Request):
     default_unit = ds["unit"] if ds else ""
     for d in found:
         unit = d.get("unit", "") or (default_unit if d.get("dimmable") else "")
+        # Échelle fournie par le connecteur (énumérations Yamaha...) :
+        # retrouvée par son nom, créée si absente. Jamais mise à jour à la
+        # re-découverte (les retouches utilisateur — valeurs supprimées,
+        # renommages — sont conservées ; supprimer l'échelle pour repartir
+        # de la liste du connecteur).
+        sid = default_sid if d.get("dimmable") else None
+        spec = d.get("scale")
+        if spec:
+            row = conn.execute("SELECT id FROM scales WHERE name=?",
+                               (spec["name"],)).fetchone()
+            if row:
+                sid = row["id"]
+            else:
+                sid = conn.execute(
+                    "INSERT INTO scales(name,unit,vmin,vmax,step,hide_slider,"
+                    "send_delay_s,toggle_click,stops) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (spec["name"], spec.get("unit", ""),
+                     float(spec.get("vmin", 0)), float(spec.get("vmax", 100)),
+                     float(spec.get("step", 1)),
+                     1 if spec.get("hide_slider") else 0,
+                     float(spec.get("send_delay_s", 1.5)),
+                     1 if spec.get("toggle_click") else 0,
+                     json.dumps(sorted(spec.get("stops", []),
+                                       key=lambda s: s["value"])))).lastrowid
         # La re-découverte ne vide jamais une unité renseignée (à la main ou
-        # via l'unité d'une échelle) quand le connecteur n'en fournit pas.
+        # via l'unité d'une échelle) quand le connecteur n'en fournit pas —
+        # et ne touche jamais scale_id.
         conn.execute(
             "INSERT INTO devices(connector_id,external_id,name,kind,unit,room,meta,"
             "dimmable,scale_id) VALUES(?,?,?,?,?,?,?,?,?) "
@@ -251,8 +279,7 @@ async def discover(cid: int, request: Request):
             "room=excluded.room, meta=excluded.meta",
             (cid, d["external_id"], d["name"], d["kind"], unit,
              d.get("room", ""), json.dumps(d.get("meta", {})),
-             1 if d.get("dimmable") else 0,
-             default_sid if d.get("dimmable") else None))
+             1 if d.get("dimmable") else 0, sid))
         # Le nom n'est pas écrasé à la re-découverte (renommages utilisateur),
         # sauf s'il contient U+FFFD : nom corrompu par l'ancien bug d'encodage.
         conn.execute(
@@ -545,7 +572,7 @@ async def delete_page(pid: int, request: Request):
 
 @app.get("/api/pages/{pid}/widgets")
 async def list_widgets(pid: int, request: Request):
-    auth.require_user(request)
+    user = auth.require_user(request)
     rows = db.get_conn().execute(
         "SELECT w.*, d.name AS device_name, d.kind, d.unit, d.icon_on, d.icon_off, "
         "d.controllable, d.last_value, d.last_seen, p2.title AS target_title, "
@@ -553,7 +580,17 @@ async def list_widgets(pid: int, request: Request):
         "FROM widgets w LEFT JOIN devices d ON d.id=w.device_id "
         "LEFT JOIN pages p2 ON p2.id=w.target_page_id "
         "WHERE w.page_id=? ORDER BY w.sort_order, w.id", (pid,)).fetchall()
-    return [dict(r) | {"options": json.loads(r["options"])} for r in rows]
+    out = []
+    for r in rows:
+        o = json.loads(r["options"])
+        # Identifiants d'un widget « page web externe » : jamais renvoyés aux
+        # lecteurs — remplacés par un simple drapeau (le visualiseur s'en sert
+        # pour forcer le passage par le relais /ext/, qui a les identifiants).
+        if user.get("r") != "admin" and (o.get("auth_user") or o.get("auth_pass")):
+            o = {k: v for k, v in o.items() if k not in ("auth_user", "auth_pass")}
+            o["has_auth"] = True
+        out.append(dict(r) | {"options": o})
+    return out
 
 
 @app.post("/api/pages/{pid}/widgets")
@@ -590,6 +627,61 @@ async def delete_widget(wid: int, request: Request):
     db.get_conn().execute("DELETE FROM widgets WHERE id=?", (wid,))
     db.get_conn().commit()
     return {"ok": True}
+
+
+@app.api_route("/ext/{wid}/{path:path}", methods=["GET", "POST"])
+async def ext_proxy(wid: int, path: str, request: Request):
+    """Relais same-origin des widgets « page web externe » (wtype weblink).
+
+    Le visualiseur est servi en HTTPS : une iframe vers une cible http://
+    du LAN serait bloquée par le navigateur (contenu mixte). Le Pi relaie
+    donc la requête. Restreint à l'origine de l'URL configurée sur le
+    widget (pas un proxy ouvert) ; seuls scheme+netloc du widget comptent,
+    le chemin demandé est rejoué tel quel sur cette origine — les liens et
+    ressources en chemin absolu de la page cible restent donc servis.
+    Limites assumées : pas de WebSocket, cookies de la cible non relayés.
+
+    Authentification de la cible (HTTP Basic) :
+      - statique : auth_user/auth_pass dans les options du widget (admin) —
+        le relais s'authentifie lui-même, transparent pour le lecteur ;
+      - dynamique : sans identifiants stockés, l'en-tête Authorization du
+        navigateur est transmis à la cible et son défi 401 WWW-Authenticate
+        est relayé en retour — le navigateur affiche sa boîte de connexion
+        (l'iframe étant same-origin via le relais, elle est autorisée).
+    """
+    auth.require_user(request)
+    row = db.get_conn().execute(
+        "SELECT wtype, options FROM widgets WHERE id=?", (wid,)).fetchone()
+    if not row or row["wtype"] != "weblink":
+        raise HTTPException(404, "Widget page web introuvable")
+    opts = json.loads(row["options"] or "{}")
+    url = opts.get("url", "")
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise HTTPException(502, "URL du widget invalide")
+    target = f"{parts.scheme}://{parts.netloc}/{path}"
+    if request.url.query:
+        target += "?" + request.url.query
+    creds = (opts["auth_user"], opts.get("auth_pass", "")) \
+        if opts.get("auth_user") else None
+    keep = ("accept", "accept-language", "content-type") \
+        + (() if creds else ("authorization",))
+    fwd = {k: v for k, v in request.headers.items() if k.lower() in keep}
+    body = await request.body() if request.method == "POST" else None
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            r = await client.request(request.method, target,
+                                     content=body, headers=fwd, auth=creds)
+    except Exception as exc:
+        raise HTTPException(502, f"cible injoignable : {exc}")
+    # Seul le content-type est recopié (+ le défi d'authentification) : les
+    # en-têtes anti-iframe de la cible (X-Frame-Options, CSP) sont
+    # volontairement abandonnés.
+    hdrs = {}
+    if r.status_code == 401 and r.headers.get("www-authenticate"):
+        hdrs["WWW-Authenticate"] = r.headers["www-authenticate"]
+    return Response(content=r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type"), headers=hdrs)
 
 
 # ================================================================ journal

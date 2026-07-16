@@ -58,11 +58,16 @@
                ["password", "Mot de passe MQTT (optionnel)"],
                ["discovery_prefix", "Préfixe discovery (homeassistant)"],
                LIVE_FIELD],
+    yamaha: [["host", "Adresse IP de l'ampli Yamaha"],
+             ["vol_min_db", "Volume à 0 % (dB, défaut -80.5)"],
+             ["vol_max_db", "Volume à 100 % (dB, défaut 16.5 — mettre 0 pour un maxi raisonnable)"],
+             LIVE_FIELD],
   };
   const CONN_DEFAULTS = {
     eedomus: { host: "", api_user: "", api_secret: "", live_refresh_s: 10 },
     wes_mqtt: { host: "127.0.0.1", port: 1883, username: "", password: "",
                 discovery_prefix: "homeassistant", live_refresh_s: 10 },
+    yamaha: { host: "", vol_min_db: -80.5, vol_max_db: 16.5, live_refresh_s: 10 },
   };
 
   async function loadConnectors() {
@@ -254,6 +259,8 @@
     connectorForm({ type: "eedomus", name: "eedomus", enabled: true, config: { ...CONN_DEFAULTS.eedomus } });
   $("#conn-add-wes").onclick = () =>
     connectorForm({ type: "wes_mqtt", name: "WES", enabled: true, config: { ...CONN_DEFAULTS.wes_mqtt } });
+  $("#conn-add-yamaha").onclick = () =>
+    connectorForm({ type: "yamaha", name: "Ampli Yamaha", enabled: true, config: { ...CONN_DEFAULTS.yamaha } });
 
   /* ============================================ périphériques */
   async function loadDevices() {
@@ -651,8 +658,8 @@
     const ws = await api(`/api/pages/${page.id}/widgets`);
     $("#we-body").innerHTML = ws.map(w => `<tr>
       <td>${w.sort_order}</td>
-      <td>${{ device: "périphérique", graph: "graphe", pagelink: "lien de page", label: "texte" }[w.wtype] || w.wtype}</td>
-      <td>${esc(w.device_name || w.target_title || w.options.text || "")}</td>
+      <td>${{ device: "périphérique", graph: "graphe", pagelink: "lien de page", label: "texte", weblink: "page web" }[w.wtype] || w.wtype}</td>
+      <td>${esc(w.device_name || w.target_title || w.options.text || w.options.url || "")}</td>
       <td>${{ both: "les deux", mobile: "smartphone", desktop: "PC" }[w.layout]}</td>
       <td>${esc(w.options.label || "")}</td>
       <td><button class="btn sm" data-e="${w.id}">Modifier</button>
@@ -692,7 +699,32 @@
         <option value="device" ${w.wtype === "device" ? "selected" : ""}>Périphérique (icône + valeur)</option>
         <option value="graph" ${w.wtype === "graph" ? "selected" : ""}>Graphe (courbes historiques)</option>
         <option value="pagelink" ${w.wtype === "pagelink" ? "selected" : ""}>Lien vers une page</option>
-        <option value="label" ${w.wtype === "label" ? "selected" : ""}>Texte libre</option></select>
+        <option value="label" ${w.wtype === "label" ? "selected" : ""}>Texte libre</option>
+        <option value="weblink" ${w.wtype === "weblink" ? "selected" : ""}>Page web externe (encapsulée)</option></select>
+      <div id="wf-web">
+        <label>URL de la page (ex. http://192.168.1.202/)</label>
+        <input id="wf-url" type="text" value="${esc(w.options.url || "")}">
+        <div class="row">
+          <div><label>Utilisateur (si la page demande une connexion)</label>
+            <input id="wf-authu" type="text" value="${esc(w.options.auth_user || "")}"></div>
+          <div><label>Mot de passe</label>
+            <input id="wf-authp" type="password" value="${esc(w.options.auth_pass || "")}"></div>
+        </div>
+        <p class="muted" style="margin:.2rem 0 .6rem;font-size:.85rem">
+          Laissés vides, la boîte de connexion du navigateur s'affichera si la
+          page l'exige ; renseignés, la connexion est faite par le serveur
+          (identifiants jamais transmis aux lecteurs).</p>
+        <label>Icône de la tuile (optionnelle, derrière le 🌐)</label>
+        <div class="row">
+          <div class="fix"><img id="wf-icon-prev" alt=""
+            src="${w.options.icon ? "/static/icons/" + esc(w.options.icon) : ""}"
+            style="width:34px;height:34px;background:var(--panel-2);border-radius:6px;padding:3px"></div>
+          <div class="fix"><button type="button" class="btn" id="wf-icon-btn">Choisir…</button></div>
+          <div class="fix"><button type="button" class="btn" id="wf-icon-clear">Aucune</button></div>
+        </div>
+        <div class="icon-pick" id="wf-icon-gallery" hidden style="margin-top:.4rem">${icons.map(i =>
+          `<img src="/static/icons/${i}" data-i="${i}" title="${i}">`).join("")}</div>
+      </div>
       <div id="wf-dev"><label>Périphérique</label>
         <input id="wf-devsearch" type="text" placeholder="Recherche rapide (nom, pièce, contrôleur)…">
         <select id="wf-device" style="margin-top:.3rem">${devOpts(devList, w.device_id)}</select></div>
@@ -723,8 +755,22 @@
         dlg.querySelector("#wf-page").hidden = t !== "pagelink";
         dlg.querySelector("#wf-text").hidden = t !== "label";
         dlg.querySelector("#wf-range").hidden = t !== "graph";
+        dlg.querySelector("#wf-web").hidden = t !== "weblink";
       };
       dlg.querySelector("#wf-type").onchange = sync; sync();
+      let wfIcon = w.options.icon || "";
+      dlg.querySelector("#wf-icon-btn").onclick = () => {
+        const g = dlg.querySelector("#wf-icon-gallery"); g.hidden = !g.hidden;
+      };
+      dlg.querySelector("#wf-icon-clear").onclick = () => {
+        wfIcon = ""; dlg.querySelector("#wf-icon-prev").src = "";
+        dlg.querySelector("#wf-icon-gallery").hidden = true;
+      };
+      dlg.querySelectorAll("#wf-icon-gallery img").forEach(img => img.onclick = () => {
+        wfIcon = img.dataset.i;
+        dlg.querySelector("#wf-icon-prev").src = "/static/icons/" + wfIcon;
+        dlg.querySelector("#wf-icon-gallery").hidden = true;
+      });
       dlg.querySelector("#wf-devsearch").oninput = ev => {
         const q = ev.target.value.toLowerCase();
         const sel = dlg.querySelector("#wf-device");
@@ -745,6 +791,14 @@
           options: { label: dlg.querySelector("#wf-label").value,
                      text: dlg.querySelector("#wf-textv").value,
                      range_s: +dlg.querySelector("#wf-rangev").value } };
+        if (t === "weblink") {
+          const u = dlg.querySelector("#wf-url").value.trim();
+          if (!/^https?:\/\//.test(u)) { toast("URL invalide : elle doit commencer par http:// ou https://"); return; }
+          body.options.url = u;
+          body.options.icon = wfIcon;
+          body.options.auth_user = dlg.querySelector("#wf-authu").value.trim();
+          body.options.auth_pass = dlg.querySelector("#wf-authp").value;
+        }
         if (w.id) await api(`/api/widgets/${w.id}`, { method: "PUT", body: JSON.stringify(body) });
         else await api(`/api/pages/${currentWePage.id}/widgets`, { method: "POST", body: JSON.stringify(body) });
         dlg.close(); openWidgetsEditor(currentWePage);
