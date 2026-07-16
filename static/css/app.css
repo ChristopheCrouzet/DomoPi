@@ -143,7 +143,10 @@ input[type=range] { accent-color: var(--amber); }
 .chart-head button { background: var(--panel-2); border: 1px solid var(--line);
   color: var(--txt); border-radius: 6px; padding: .15rem .5rem; cursor: pointer; font-size: .78rem; }
 .chart-head button.active { border-color: var(--copper); color: var(--amber); }
-.chart-svg { width: 100%; height: auto; display: block; }
+.chart-svg { width: 100%; height: auto; display: block;
+  /* Sans ça, un glissé tactile est capté par le défilement de page avant
+     que le navigateur ne livre les pointermove au curseur de survol. */
+  touch-action: none; }
 .legend { display: flex; gap: .9rem; font-size: .75rem; color: var(--muted); padding: .2rem .4rem; }
 .legend i { display: inline-block; width: 10px; height: 3px; margin-right: 4px; vertical-align: middle; }
 
