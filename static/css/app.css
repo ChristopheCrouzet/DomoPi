@@ -197,14 +197,6 @@ td .mono { font-family: var(--mono); }
   border: 1px solid var(--line); border-radius: 12px; padding: 1.4rem;
   border-top: 3px solid var(--copper); }
 
-/* ---------------- page web encapsulée (widget weblink) ---------------- */
-.embed-bar { display: flex; gap: .6rem; align-items: center; margin-bottom: .6rem; }
-.embed-bar .title { flex: 1; min-width: 0; color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Hauteur : viewport moins bandeau (46px) + barre Retour + marges de main. */
-.embed-frame { width: 100%; height: calc(100vh - 150px); border: 1px solid var(--line);
-  border-radius: 10px; background: #fff; }
-
 /* ---------------- divers ---------------- */
 .toast { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
   background: var(--panel-2); border: 1px solid var(--copper); color: var(--txt);

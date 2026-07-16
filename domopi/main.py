@@ -10,9 +10,6 @@ import os
 import re
 import socket
 import time
-from urllib.parse import urlsplit
-
-import httpx
 
 from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
@@ -572,7 +569,7 @@ async def delete_page(pid: int, request: Request):
 
 @app.get("/api/pages/{pid}/widgets")
 async def list_widgets(pid: int, request: Request):
-    user = auth.require_user(request)
+    auth.require_user(request)
     rows = db.get_conn().execute(
         "SELECT w.*, d.name AS device_name, d.kind, d.unit, d.icon_on, d.icon_off, "
         "d.controllable, d.last_value, d.last_seen, p2.title AS target_title, "
@@ -580,17 +577,7 @@ async def list_widgets(pid: int, request: Request):
         "FROM widgets w LEFT JOIN devices d ON d.id=w.device_id "
         "LEFT JOIN pages p2 ON p2.id=w.target_page_id "
         "WHERE w.page_id=? ORDER BY w.sort_order, w.id", (pid,)).fetchall()
-    out = []
-    for r in rows:
-        o = json.loads(r["options"])
-        # Identifiants d'un widget « page web externe » : jamais renvoyés aux
-        # lecteurs — remplacés par un simple drapeau (le visualiseur s'en sert
-        # pour forcer le passage par le relais /ext/, qui a les identifiants).
-        if user.get("r") != "admin" and (o.get("auth_user") or o.get("auth_pass")):
-            o = {k: v for k, v in o.items() if k not in ("auth_user", "auth_pass")}
-            o["has_auth"] = True
-        out.append(dict(r) | {"options": o})
-    return out
+    return [dict(r) | {"options": json.loads(r["options"])} for r in rows]
 
 
 @app.post("/api/pages/{pid}/widgets")
@@ -627,61 +614,6 @@ async def delete_widget(wid: int, request: Request):
     db.get_conn().execute("DELETE FROM widgets WHERE id=?", (wid,))
     db.get_conn().commit()
     return {"ok": True}
-
-
-@app.api_route("/ext/{wid}/{path:path}", methods=["GET", "POST"])
-async def ext_proxy(wid: int, path: str, request: Request):
-    """Relais same-origin des widgets « page web externe » (wtype weblink).
-
-    Le visualiseur est servi en HTTPS : une iframe vers une cible http://
-    du LAN serait bloquée par le navigateur (contenu mixte). Le Pi relaie
-    donc la requête. Restreint à l'origine de l'URL configurée sur le
-    widget (pas un proxy ouvert) ; seuls scheme+netloc du widget comptent,
-    le chemin demandé est rejoué tel quel sur cette origine — les liens et
-    ressources en chemin absolu de la page cible restent donc servis.
-    Limites assumées : pas de WebSocket, cookies de la cible non relayés.
-
-    Authentification de la cible (HTTP Basic) :
-      - statique : auth_user/auth_pass dans les options du widget (admin) —
-        le relais s'authentifie lui-même, transparent pour le lecteur ;
-      - dynamique : sans identifiants stockés, l'en-tête Authorization du
-        navigateur est transmis à la cible et son défi 401 WWW-Authenticate
-        est relayé en retour — le navigateur affiche sa boîte de connexion
-        (l'iframe étant same-origin via le relais, elle est autorisée).
-    """
-    auth.require_user(request)
-    row = db.get_conn().execute(
-        "SELECT wtype, options FROM widgets WHERE id=?", (wid,)).fetchone()
-    if not row or row["wtype"] != "weblink":
-        raise HTTPException(404, "Widget page web introuvable")
-    opts = json.loads(row["options"] or "{}")
-    url = opts.get("url", "")
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.netloc:
-        raise HTTPException(502, "URL du widget invalide")
-    target = f"{parts.scheme}://{parts.netloc}/{path}"
-    if request.url.query:
-        target += "?" + request.url.query
-    creds = (opts["auth_user"], opts.get("auth_pass", "")) \
-        if opts.get("auth_user") else None
-    keep = ("accept", "accept-language", "content-type") \
-        + (() if creds else ("authorization",))
-    fwd = {k: v for k, v in request.headers.items() if k.lower() in keep}
-    body = await request.body() if request.method == "POST" else None
-    try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            r = await client.request(request.method, target,
-                                     content=body, headers=fwd, auth=creds)
-    except Exception as exc:
-        raise HTTPException(502, f"cible injoignable : {exc}")
-    # Seul le content-type est recopié (+ le défi d'authentification) : les
-    # en-têtes anti-iframe de la cible (X-Frame-Options, CSP) sont
-    # volontairement abandonnés.
-    hdrs = {}
-    if r.status_code == 401 and r.headers.get("www-authenticate"):
-        hdrs["WWW-Authenticate"] = r.headers["www-authenticate"]
-    return Response(content=r.content, status_code=r.status_code,
-                    media_type=r.headers.get("content-type"), headers=hdrs)
 
 
 # ================================================================ journal

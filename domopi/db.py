@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS widgets(
   id INTEGER PRIMARY KEY,
   page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
   layout TEXT NOT NULL DEFAULT 'both',         -- 'both' | 'mobile' | 'desktop'
-  wtype TEXT NOT NULL,                         -- 'device' | 'graph' | 'pagelink' | 'label' | 'weblink'
+  wtype TEXT NOT NULL,                         -- 'device' | 'graph' | 'pagelink' | 'label'
   device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
   target_page_id INTEGER REFERENCES pages(id) ON DELETE CASCADE,
   sort_order INTEGER NOT NULL DEFAULT 0,

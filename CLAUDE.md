@@ -305,20 +305,12 @@ validés (nom `[A-Za-z0-9._-]`, extension, taille).
 `SETTABLE` (main.py) liste les clés de réglage modifiables via l'API — l'étendre
 si on ajoute un réglage.
 
-`/ext/{widget_id}/{chemin}` (hors `/api`, connecté) : relais same-origin des
-widgets « page web externe » (`wtype='weblink'`, `options.url`, tuile 🌐 qui
-ouvre la cible dans une iframe sous le bandeau). Sert à encapsuler dans une
-iframe une cible **http** du LAN alors que DomoPi est servi en HTTPS (sinon
-contenu mixte bloqué par le navigateur). Restreint à l'origine de l'URL du
-widget ; GET/POST seulement, pas de WebSocket, cookies de la cible non
-relayés — les pages très dynamiques (ex. interface d'un ampli Yamaha) ne
-passent pas : préférer alors un connecteur dédié. Authentification HTTP Basic
-de la cible : statique (`options.auth_user`/`auth_pass`, saisis dans l'admin —
-**jamais renvoyés aux lecteurs** par `GET /widgets`, remplacés par le drapeau
-`has_auth`) ou dynamique (Authorization du navigateur transmis, défi 401
-`WWW-Authenticate` relayé → boîte de connexion native). Le visualiseur passe
-par le relais si les protocoles page / cible divergent **ou** si la cible a
-une authentification ; sinon l'iframe pointe directement sur l'URL.
+Note : un widget « page web externe » encapsulée en iframe (avec relais
+same-origin `/ext/` pour le contenu mixte http/HTTPS) a été tenté puis
+**retiré** (juillet 2026, cf. historique git) : les interfaces embarquées des
+appareils du LAN sont trop dynamiques pour survivre à un relais sans
+WebSocket. Pour intégrer un appareil, préférer un connecteur dédié (cf. le
+connecteur yamaha, né de ce constat).
 
 ## Frontend
 
