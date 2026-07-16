@@ -8,7 +8,10 @@ Périphériques exposés (liste fixe, pas de vraie découverte côté ampli) :
   - main_power    MAIN ON/OFF    on/off  (zone principale)
   - zone2_power   ZONE 2 ON/OFF  on/off
   - enhancer      ENHANCER       on/off  (Compressed Music Enhancer)
-  - main_volume   MAIN VOLUME    0-100 % (converti en dB, pas de 0.5 dB)
+  - main_volume   MAIN VOLUME    0-100 % (converti en dB, pas de 0.5 dB) —
+                                 échelle « Yamaha - Volume » type consigne :
+                                 le clic ouvre le réglage, pas de on/off
+                                 (un on enverrait le volume à 100 %)
   - sleep         SLEEP          énumération 0/30/60/90/120 (minutes)
   - input         ENTRÉE         énumération 1..N (liste lue sur l'ampli,
                                  libellés personnalisés inclus, ex. « PS3 »)
@@ -126,10 +129,15 @@ class YamahaConnector(Connector):
                 for ext, (name, _zone) in POWER_ZONES.items()]
         devs.append({"external_id": ENHANCER_ID, "name": "ENHANCER",
                      "kind": "actuator", "unit": "", "room": "", "meta": {}})
-        # dimmable -> l'échelle par défaut 0-100 % est affectée à l'import.
+        # Échelle dédiée de type « consigne » (toggle_click=0) : le clic
+        # ouvre directement le réglage — jamais de marche/arrêt qui
+        # enverrait brutalement le volume à 100 %.
         devs.append({"external_id": VOLUME_ID, "name": "MAIN VOLUME",
                      "kind": "actuator", "unit": "%", "room": "",
-                     "meta": {}, "dimmable": True})
+                     "meta": {}, "dimmable": True,
+                     "scale": {"name": "Yamaha - Volume", "unit": "%",
+                               "vmin": 0, "vmax": 100, "step": 1,
+                               "hide_slider": False, "toggle_click": False}})
         devs.append({"external_id": SLEEP_ID, "name": "SLEEP",
                      "kind": "actuator", "unit": "", "room": "", "meta": {},
                      "scale": dict(enum_scale, name="Yamaha - Sleep",
