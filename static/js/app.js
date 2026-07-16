@@ -93,6 +93,19 @@
 
   async function renderPage(id, soft) {
     const main = $("#main");
+    // Une MAJ "soft" (cycle 60 s) recrée tout le DOM de la page : on
+    // mémorise ici le choix de plage (1J/4J/15J) de chaque graphe et le
+    // défilement de la page pour les restaurer après coup, sinon l'utilisateur
+    // les perd à chaque rafraîchissement périodique.
+    const prevRanges = new Map();
+    let prevScrollY = null;
+    if (soft) {
+      main.querySelectorAll(".chart-box[data-wid]").forEach(box => {
+        const btn = box.querySelector(".chart-head button.active");
+        if (btn) prevRanges.set(box.dataset.wid, +btn.dataset.span);
+      });
+      prevScrollY = window.scrollY;
+    }
     document.querySelectorAll("#root-nav a").forEach(a =>
       a.classList.toggle("active", a.hash === "#" + id));
     const page = pageById(id);
@@ -150,12 +163,13 @@
         c.innerHTML = `<div class="name" style="text-align:left;font-size:.95rem;color:var(--txt)">${w.options.text || ""}</div>`;
         grid.appendChild(c);
       } else if (w.wtype === "graph" && w.device_id)
-        grid.appendChild(graphWidget(w));
+        grid.appendChild(graphWidget(w, prevRanges.get(String(w.id))));
       else if (w.device_id)
         grid.appendChild(deviceCard(w));
     }
     main.innerHTML = ""; main.appendChild(frag);
     document.querySelectorAll(".chart-head button.active").forEach(b => b.click());
+    if (soft && prevScrollY != null) window.scrollTo(0, prevScrollY);
     if (!soft) setLive(widgets.filter(w => w.wtype === "device" && w.device_id)
                               .map(w => w.device_id));
   }
@@ -177,8 +191,14 @@
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(id);
     });
-    for (const [s, gids] of groups)
+    for (const [s, gids] of groups) {
+      // Rafraîchit tout de suite : sans ça, last_seen d'un périphérique non
+      // surveillé (mis à jour uniquement par ce tick) peut dater de la
+      // dernière visite de la page, faisant clignoter le badge "sans réponse"
+      // le temps du premier cycle (jusqu'à live_refresh_s, 10 s par défaut).
+      liveTick(gids);
       liveTimers.push(setInterval(() => liveTick(gids), s * 1000));
+    }
   }
   async function liveTick(ids) {
     if (document.hidden || currentPage == null) return;
@@ -282,8 +302,8 @@
     }
     const valueHtml = sc && !isNaN(num)
       ? (stop && stop.label ? stop.label
-         : fmtScale(num, sc.step) + (d.unit ? " " + d.unit : ""))
-      : `${d.last_value ?? "—"}${d.unit ? " " + d.unit : ""}`;
+         : fmtScale(num, sc.step) + (d.unit ? " " + d.unit : ""))
+      : `${d.last_value ?? "—"}${d.unit ? " " + d.unit : ""}`;
     c.innerHTML = iconHtml +
       `<div class="value ${dim ? "off" : ""}">${valueHtml}</div>
        <div class="name">${w.options.label || d.name || "?"}</div>` +
@@ -351,7 +371,7 @@
      consignes de chauffage, modes... */
   function openScale(d, sc, current) {
     const dlg = $("#zoom-dlg"), body = $("#zoom-body");
-    const unit = d.unit ? " " + d.unit : "";
+    const unit = d.unit ? " " + d.unit : "";
     const fmt = v => fmtScale(v, sc.step) + unit;
     const snap = v => {
       v = Math.max(sc.vmin, Math.min(sc.vmax, +v || 0));
@@ -414,19 +434,21 @@
   const RANGES = [["24 h", 86400], ["4 j", 4 * 86400], ["15 j", 15 * 86400],
                   ["30 j", 30 * 86400], ["90 j", 90 * 86400]];
 
-  function graphWidget(w) {
+  function graphWidget(w, presetSpan) {
     const d = devices[w.device_id] || {};
     const box = document.createElement("div");
     box.className = "chart-box wide";
+    if (w.id != null) box.dataset.wid = w.id;
     const head = document.createElement("div");
     head.className = "chart-head";
     head.innerHTML = `<span class="title">${w.options.label || d.name || ""}
-      <span class="muted mono" style="font-family:var(--mono)">${d.last_value ?? ""}${d.unit ? " " + d.unit : ""}</span></span>`;
+      <span class="muted mono" style="font-family:var(--mono)">${d.last_value ?? ""}${d.unit ? " " + d.unit : ""}</span></span>`;
     const plot = document.createElement("div");
-    const def = w.options.range_s || 86400;
+    const def = presetSpan || w.options.range_s || 86400;
     for (const [lbl, span] of RANGES) {
       const b = document.createElement("button");
       b.textContent = lbl;
+      b.dataset.span = span;
       if (span === def) b.className = "active";
       b.onclick = async () => {
         head.querySelectorAll("button").forEach(x => x.classList.remove("active"));

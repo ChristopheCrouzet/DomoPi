@@ -85,6 +85,78 @@
       svg.appendChild(el("path", { d: line("v"), fill: "none", stroke: "#e8a13c",
         "stroke-width": 1.6, "stroke-linejoin": "round" }));
     }
+
+    /* Curseur au survol : ligne verticale accrochée au point réel le plus
+       proche, avec étiquette date (+ heure en mode "raw", <= 4 j) et
+       valeur(s) courante(s). Position verticale de l'étiquette fixe (haut du
+       graphe) — seule l'abscisse suit la souris. */
+    const fmtVal = v => (Math.abs(v) >= 1000 ? v.toFixed(0) : +v.toFixed(2)) +
+      (opts.unit ? " " + opts.unit : "");
+    const fmtCursorDate = (ts, withTime) => {
+      const d = new Date(ts * 1000);
+      const day = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+      return withTime ? day + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : day;
+    };
+    const nearestIdx = t => {
+      let lo = 0, hi = pts.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (pts[mid].t < t) lo = mid + 1; else hi = mid; }
+      if (lo > 0 && Math.abs(pts[lo - 1].t - t) <= Math.abs(pts[lo].t - t)) lo--;
+      return lo;
+    };
+    const removeCursor = () => svg.querySelectorAll(".cursor-g").forEach(n => n.remove());
+    const showCursor = px => {
+      removeCursor();
+      const t = t0 + (px - M.l) / Math.max(1, W - M.l - M.r) * (t1 - t0);
+      const p = pts[nearestIdx(t)];
+      const cx = X(p.t);
+      const g = el("g", { class: "cursor-g" });
+      g.appendChild(el("line", { x1: cx, x2: cx, y1: M.t, y2: H - M.b,
+        stroke: "#8b97a5", "stroke-width": .8, "stroke-dasharray": "3,2" }));
+      const lines = [{ text: fmtCursorDate(p.t, !band), color: "#c8d0d8" }];
+      if (band) {
+        g.appendChild(el("circle", { cx, cy: Y(p.max), r: 2.6, fill: "#e05b4f" }));
+        g.appendChild(el("circle", { cx, cy: Y(p.avg), r: 2.6, fill: "#e8a13c" }));
+        g.appendChild(el("circle", { cx, cy: Y(p.min), r: 2.6, fill: "#4f9de0" }));
+        lines.push({ text: "max " + fmtVal(p.max), color: "#e05b4f" });
+        lines.push({ text: "moy " + fmtVal(p.avg), color: "#e8a13c" });
+        lines.push({ text: "min " + fmtVal(p.min), color: "#4f9de0" });
+      } else {
+        g.appendChild(el("circle", { cx, cy: Y(p.v), r: 2.8, fill: "#e8a13c" }));
+        lines.push({ text: fmtVal(p.v), color: "#e8a13c" });
+      }
+      // Groupe séparé pour l'étiquette : sa bbox propre (hors ligne/points,
+      // qui s'étendent sur toute la hauteur du graphe) donne la taille du fond.
+      const lh = 12.5, padX = 6, padY = 5;
+      const tip = el("g", {});
+      const texts = lines.map((ln, i) => {
+        const txt = el("text", { x: 0, y: padY + (i + 1) * lh - 3, "font-size": 10.5, fill: ln.color });
+        txt.textContent = ln.text;
+        tip.appendChild(txt);
+        return txt;
+      });
+      g.appendChild(tip);
+      svg.appendChild(g);
+      const bbox = tip.getBBox();
+      const boxW = bbox.width + padX * 2, boxH = lines.length * lh + padY * 2;
+      let boxX = cx + 8;
+      if (boxX + boxW > W - M.r) boxX = cx - 8 - boxW;
+      const boxY = M.t + 4;
+      const rect = el("rect", { x: boxX, y: boxY, width: boxW, height: boxH, rx: 4,
+        fill: "#161c24", stroke: "#2b3442", "stroke-width": 1 });
+      tip.insertBefore(rect, texts[0]);
+      texts.forEach((txt, i) => {
+        txt.setAttribute("x", boxX + padX);
+        txt.setAttribute("y", boxY + padY + (i + 1) * lh - 3);
+      });
+    };
+    svg.addEventListener("pointermove", e => {
+      const r = svg.getBoundingClientRect();
+      if (!r.width) return;
+      const px = Math.max(M.l, Math.min(W - M.r, (e.clientX - r.left) / r.width * W));
+      showCursor(px);
+    });
+    svg.addEventListener("pointerleave", removeCursor);
+
     container.appendChild(svg);
 
     const legend = document.createElement("div");
