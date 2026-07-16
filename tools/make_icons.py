@@ -201,6 +201,44 @@ w("home_cinema",
   + r_(14.5, 27.5, 19, 4.4, 2.2, G, 1.8)                       # barre de son
   + p("M18.5 29.7 h.1 M22.2 29.7 h.1 M25.8 29.7 h.1 M29.5 29.7 h.1", A, 1.8))
 
+# ------------------------------------------- audio / home cinéma (ampli Yamaha)
+# Glyphe haut-parleur commun aux variantes à ondes/barré : caisse + cône vers
+# la droite, calé à gauche pour laisser la zone x>25 aux ondes ou à la croix.
+SPK = (r_(9.5, 17.5, 6, 13, 1, W, 2.2)
+       + p("M15.5 20.5 L24.5 13 v22 L15.5 27.5 z", W, 2.2))
+# Ondes : arcs concentriques centrés sur la bouche du cône (25,24), ±50°.
+ONDE_1 = p("M28.9 19.4 A6 6 0 0128.9 28.6", A, 2.1)
+ONDE_2 = p("M32.1 15.6 A11 11 0 0132.1 32.4", A, 2.1)
+ONDE_3 = p("M35.3 11.7 A16 16 0 0135.3 36.3", A, 2.1)
+w("haut_parleur",                                              # seul -> centré
+  r_(16.5, 17.5, 6, 13, 1, W, 2.2)
+  + p("M22.5 20.5 L31.5 13 v22 L22.5 27.5 z", W, 2.2))
+w("haut_parleur_barre",                                        # son coupé
+  SPK + p("M27.5 19.5 L36.5 28.5 M36.5 19.5 L27.5 28.5", A, 2.2))
+w("haut_parleur_onde_1", SPK + ONDE_1)
+w("haut_parleur_onde_2", SPK + ONDE_1 + ONDE_2)
+w("haut_parleur_onde_3", SPK + ONDE_1 + ONDE_2 + ONDE_3)
+w("ampli_av",
+  r_(5.5, 15.5, 37, 17, 2.4, W)                                # façade
+  + c(35.2, 24, 4.4, W, 2) + p("M35.2 20.9 v2.2", A, 1.8)      # bouton volume
+  + r_(10, 19, 15, 4.6, 1, G, 1.5)                             # afficheur
+  + c(12, 27.8, .9, A, 1.3, A)                                 # témoin marche
+  + p("M16.5 27.8 h.1 M20 27.8 h.1 M23.5 27.8 h.1", G, 1.8)    # boutons
+  + p("M11 32.5 v2.2 M37 32.5 v2.2", G, 1.9))                  # pieds
+w("enceintes_2",                                               # paire stéréo
+  r_(11.5, 9.5, 10, 28, 1.6, W)
+  + r_(26.5, 9.5, 10, 28, 1.6, W)
+  + c(16.5, 15.5, 1.6, G, 1.5) + c(31.5, 15.5, 1.6, G, 1.5)    # tweeters
+  + c(16.5, 29, 3.6, A, 1.7) + c(31.5, 29, 3.6, A, 1.7)        # boomers
+  + p("M8 41.5 h32", G, 1.5))                                  # sol
+w("enceintes_7",                                               # 7 canaux, vue de dessus
+  r_(9.5, 6.5, 7, 4.6, 1, W, 2) + r_(20.5, 6.5, 7, 4.6, 1, W, 2)
+  + r_(31.5, 6.5, 7, 4.6, 1, W, 2)                             # avant G/C/D
+  + r_(4.5, 21.5, 4.6, 7, 1, W, 2) + r_(38.9, 21.5, 4.6, 7, 1, W, 2)  # latérales
+  + r_(13, 37, 7, 4.6, 1, W, 2) + r_(28, 37, 7, 4.6, 1, W, 2)  # arrières
+  + c(24, 22.5, 2.2, A, 1.6, A, ".9")                          # auditeur
+  + r_(18.5, 27.5, 11, 6, 2.6, G, 1.5))                        # canapé
+
 # ---------------------------------------------------------------- box internet
 w("box_internet",
   r_(7, 26, 34, 12, 3.5, W)
