@@ -273,9 +273,9 @@ config dans `static/js/admin.js:CONN_FIELDS` / `CONN_DEFAULTS`.
   déclarer (décodage manuel dans `_call`).
   Doc : https://doc.eedomus.com/en/index.php/API_eedomus
 - **yamaha** : amplis AV Yamaha via l'API **YNC** (XML sur HTTP,
-  `POST /YamahaRemoteControl/ctrl` — testé sur RX-V773). Liste fixe de 12
-  périphériques : `system_power`/`main_power`/`zone2_power`/`enhancer`
-  (on/off), `main_volume` (0-100 %, échelle dédiée « Yamaha - Volume » de
+  `POST /YamahaRemoteControl/ctrl` — testé sur RX-V773). Liste fixe de 13
+  périphériques : `system_power`/`main_power`/`zone2_power`/`enhancer`/
+  `mute` (on/off — mute : « on » = son coupé), `main_volume` (0-100 %, échelle dédiée « Yamaha - Volume » de
   type consigne — `toggle_click=0`, le clic ouvre le réglage : un clic
   marche/arrêt enverrait le volume à 100 %), `sleep`/`input`/`surround`
   (énumérations livrées avec une

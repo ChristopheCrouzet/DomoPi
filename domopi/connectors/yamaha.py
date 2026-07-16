@@ -8,6 +8,7 @@ Périphériques exposés (liste fixe, pas de vraie découverte côté ampli) :
   - main_power    MAIN ON/OFF    on/off  (zone principale)
   - zone2_power   ZONE 2 ON/OFF  on/off
   - enhancer      ENHANCER       on/off  (Compressed Music Enhancer)
+  - mute          MUTE           on/off  (« on » = son coupé, zone principale)
   - main_volume   MAIN VOLUME    0-100 % (converti en dB, pas de 0.5 dB) —
                                  échelle « Yamaha - Volume » type consigne :
                                  le clic ouvre le réglage, pas de on/off
@@ -47,7 +48,7 @@ POWER_ZONES = {
     "zone2_power": ("ZONE 2 ON/OFF", "Zone_2"),
 }
 VOLUME_ID, SLEEP_ID, INPUT_ID = "main_volume", "sleep", "input"
-SURROUND_ID, ENHANCER_ID = "surround", "enhancer"
+SURROUND_ID, ENHANCER_ID, MUTE_ID = "surround", "enhancer", "mute"
 SCENES = {f"scene_{n}": f"Scene {n}" for n in (1, 2, 3, 4)}
 
 SLEEP_STOPS = [(0, "Off"), (30, "30 min"), (60, "60 min"),
@@ -129,6 +130,10 @@ class YamahaConnector(Connector):
                 for ext, (name, _zone) in POWER_ZONES.items()]
         devs.append({"external_id": ENHANCER_ID, "name": "ENHANCER",
                      "kind": "actuator", "unit": "", "room": "", "meta": {}})
+        # « on » = son coupé (l'icône "on" du périphérique doit représenter
+        # le haut-parleur barré).
+        devs.append({"external_id": MUTE_ID, "name": "MUTE",
+                     "kind": "actuator", "unit": "", "room": "", "meta": {}})
         # Échelle dédiée de type « consigne » (toggle_click=0) : le clic
         # ouvre directement le réglage — jamais de marche/arrêt qui
         # enverrait brutalement le volume à 100 %.
@@ -186,7 +191,7 @@ class YamahaConnector(Connector):
                                         "</Power></Power_Control></System>")
                 values["system_power"] = 1 if root.findtext(".//Power") == "On" else 0
             main_ids = {"main_power", VOLUME_ID, SLEEP_ID, INPUT_ID,
-                        SURROUND_ID, ENHANCER_ID}
+                        SURROUND_ID, ENHANCER_ID, MUTE_ID}
             if wanted & main_ids:
                 root = self._rpc("GET", "<Main_Zone><Basic_Status>GetParam"
                                         "</Basic_Status></Main_Zone>")
@@ -213,6 +218,9 @@ class YamahaConnector(Connector):
                 if ENHANCER_ID in wanted:
                     values[ENHANCER_ID] = \
                         1 if root.findtext(".//Current/Enhancer") == "On" else 0
+                if MUTE_ID in wanted:
+                    values[MUTE_ID] = \
+                        1 if root.findtext(".//Volume/Mute") == "On" else 0
             if "zone2_power" in wanted:
                 root = self._rpc("GET", "<Zone_2><Basic_Status>GetParam"
                                         "</Basic_Status></Zone_2>")
@@ -246,6 +254,11 @@ class YamahaConnector(Connector):
                 self._rpc("PUT", "<Main_Zone><Surround><Program_Sel><Current>"
                                  f"<Enhancer>{state}</Enhancer>"
                                  "</Current></Program_Sel></Main_Zone>")
+            elif ext == MUTE_ID:
+                state = "On" if is_on() else "Off"
+                self._rpc("PUT", "<Main_Zone><Volume>"
+                                 f"<Mute>{state}</Mute>"
+                                 "</Volume></Main_Zone>")
             elif ext in SCENES:
                 if not is_on():
                     return True          # « off » sans objet sur une impulsion
