@@ -146,6 +146,7 @@
       ...childPages(id).map(k => ({ sort: k.sort_order || 0, kid: k })),
       ...widgets.map(w => ({ sort: w.sort_order || 0, w })),
     ].sort((a, b) => a.sort - b.sort);
+    const graphReady = [];
     for (const it of items) {
       if (it.kid) {
         const k = it.kid;
@@ -162,13 +163,19 @@
         c.className = "card wide"; c.style.minHeight = "0";
         c.innerHTML = `<div class="name" style="text-align:left;font-size:.95rem;color:var(--txt)">${w.options.text || ""}</div>`;
         grid.appendChild(c);
-      } else if (w.wtype === "graph" && w.device_id)
-        grid.appendChild(graphWidget(w, prevRanges.get(String(w.id))));
-      else if (w.device_id)
+      } else if (w.wtype === "graph" && w.device_id) {
+        const gw = graphWidget(w, prevRanges.get(String(w.id)));
+        grid.appendChild(gw.box);
+        graphReady.push(gw.ready);
+      } else if (w.device_id)
         grid.appendChild(deviceCard(w));
     }
+    // MAJ "soft" : on attend que tous les graphes aient chargé leurs données
+    // avant de basculer le DOM, sinon la page s'effondre (courbes vides) le
+    // temps des requêtes puis "saute" en se remplissant — visible surtout
+    // avec de nombreux graphes sur une même page.
+    if (soft) await Promise.all(graphReady);
     main.innerHTML = ""; main.appendChild(frag);
-    document.querySelectorAll(".chart-head button.active").forEach(b => b.click());
     if (soft && prevScrollY != null) window.scrollTo(0, prevScrollY);
     if (!soft) setLive(widgets.filter(w => w.wtype === "device" && w.device_id)
                               .map(w => w.device_id));
@@ -434,6 +441,10 @@
   const RANGES = [["24 h", 86400], ["4 j", 4 * 86400], ["15 j", 15 * 86400],
                   ["30 j", 30 * 86400], ["90 j", 90 * 86400]];
 
+  /* Retourne {box, ready} : ready résout une fois les données de la plage
+     initiale chargées — permet à l'appelant (renderPage) d'attendre tous les
+     graphes d'une page avant de les afficher, pour éviter un DOM "vide" qui
+     s'effondre puis se remplit graphe par graphe. */
   function graphWidget(w, presetSpan) {
     const d = devices[w.device_id] || {};
     const box = document.createElement("div");
@@ -445,25 +456,26 @@
       <span class="muted mono" style="font-family:var(--mono)">${d.last_value ?? ""}${d.unit ? " " + d.unit : ""}</span></span>`;
     const plot = document.createElement("div");
     const def = presetSpan || w.options.range_s || 86400;
+    const load = async (span, btn) => {
+      head.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      const now = Math.floor(Date.now() / 1000);
+      try {
+        const data = await api(`/api/series/${d.id}?t_from=${now - span}&t_to=${now}`);
+        renderChart(plot, data, { unit: d.unit, height: isMobile() ? 200 : 260 });
+      } catch (e) { plot.innerHTML = `<p class="muted">${e.message}</p>`; }
+    };
+    let activeBtn = null;
     for (const [lbl, span] of RANGES) {
       const b = document.createElement("button");
       b.textContent = lbl;
       b.dataset.span = span;
-      if (span === def) b.className = "active";
-      b.onclick = async () => {
-        head.querySelectorAll("button").forEach(x => x.classList.remove("active"));
-        b.classList.add("active");
-        const now = Math.floor(Date.now() / 1000);
-        try {
-          const data = await api(`/api/series/${d.id}?t_from=${now - span}&t_to=${now}`);
-          renderChart(plot, data, { unit: d.unit, height: isMobile() ? 200 : 260 });
-        } catch (e) { plot.innerHTML = `<p class="muted">${e.message}</p>`; }
-      };
+      if (span === def) activeBtn = b;
+      b.onclick = () => load(span, b);
       head.appendChild(b);
     }
     box.appendChild(head); box.appendChild(plot);
-    queueMicrotask(() => head.querySelector("button.active")?.click());
-    return box;
+    return { box, ready: load(def, activeBtn || head.querySelector("button")) };
   }
 
   function openZoom(d) {
@@ -473,7 +485,7 @@
     x.className = "dlg-x"; x.textContent = "✕"; x.title = "Fermer";
     x.onclick = () => dlg.close();
     body.appendChild(x);
-    body.appendChild(graphWidget({ device_id: d.id, options: { label: d.name, range_s: 86400 } }));
+    body.appendChild(graphWidget({ device_id: d.id, options: { label: d.name, range_s: 86400 } }).box);
     dlg.showModal();
   }
 
