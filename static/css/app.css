@@ -247,8 +247,9 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
 .dlg-x:hover { color: var(--txt); border-color: var(--line); background: var(--panel-2); }
 @media (max-width: 700px) {
   main { padding: .6rem; }
-  /* au moins 3 colonnes (donc 9 tuiles et plus à l'écran) même sur 320 px */
-  .grid { grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: .5rem; }
+  /* 3 colonnes fixes : 4 colonnes (iPhone 14 en portrait) rendaient les
+     tuiles trop serrées, et on garde bien 3 colonnes dès 320 px */
+  .grid { grid-template-columns: repeat(3, 1fr); gap: .5rem; }
   .card .value { font-size: 1.05rem; }
   #banner .who { display: none; }
   #banner { flex-wrap: wrap; row-gap: .2rem; }

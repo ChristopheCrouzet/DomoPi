@@ -302,7 +302,9 @@
         <img src="/static/icons/${d.icon_off}" alt="">
         <img class="top" src="/static/icons/${d.icon_on}" alt=""></span></div>`;
     } else {
-      const icon = isActuator
+      // Les icônes basculent aussi pour un capteur virtuel pilotable
+      // (mode on/off eedomus) — un capteur non pilotable garde son icône fixe.
+      const icon = isActuator || d.controllable
         ? (on ? (d.icon_on || d.icon_off) : (d.icon_off || d.icon_on))
         : (d.icon_on || d.icon_off);
       if (icon) iconHtml = `<div class="icon"><img src="/static/icons/${icon}" alt=""></div>`;

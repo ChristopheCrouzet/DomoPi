@@ -299,9 +299,9 @@ Le « double rendu » d'une page filtre les widgets par `layout`
   page) ont la même hauteur fixe (`.grid > .card`, 122 px) ; nom et valeur en
   `nowrap` + ellipse ; « sans réponse » est un badge en surimpression (absolu,
   haut-droite) pour ne pas modifier la hauteur. Les textes libres (`.wide`) et
-  les graphes gardent leur hauteur propre. Mobile : colonnes
-  `minmax(86px, 1fr)` pour garantir **au moins 3 colonnes** (≥ 9 tuiles
-  visibles) dès 320 px de large.
+  les graphes gardent leur hauteur propre. Mobile : **3 colonnes
+  fixes** (`repeat(3, 1fr)`) — 4 colonnes étaient trop serrées sur iPhone 14
+  en portrait, et 3 colonnes restent garanties dès 320 px de large.
 - **Niveau visuel de consigne** : tuile pilotable dont l'échelle affiche la
   barre → classe `.lvl` + variable `--lvl` (position min→max en %) : la tuile
   s'éclaircit depuis le bas (dégradé blanc ~10 % d'opacité). Rien pour les
@@ -327,7 +327,10 @@ Le « double rendu » d'une page filtre les widgets par `layout`
   périphériques de la même icône).
 - **Capteurs virtuels pilotables** : « Pilotable » et « Échelle » sont offerts
   pour tous les périphériques, capteurs compris (consignes/modes eedomus) ;
-  seul `dimmable` reste réservé aux sorties côté serveur.
+  seul `dimmable` reste réservé aux sorties côté serveur. Sur la tuile, les
+  icônes on/off basculent pour tout périphérique **pilotable** (actionneur ou
+  capteur) ; un capteur non pilotable garde son icône fixe (`icon_on` sinon
+  `icon_off`).
 
 ## Points d'attention Pi 2/3
 
