@@ -253,7 +253,7 @@ class YamahaConnector(Connector):
                 state = "On" if is_on() else "Off"
                 self._rpc("PUT", "<Main_Zone><Surround><Program_Sel><Current>"
                                  f"<Enhancer>{state}</Enhancer>"
-                                 "</Current></Program_Sel></Main_Zone>")
+                                 "</Current></Program_Sel></Surround></Main_Zone>")
             elif ext == MUTE_ID:
                 state = "On" if is_on() else "Off"
                 self._rpc("PUT", "<Main_Zone><Volume>"
@@ -298,7 +298,7 @@ class YamahaConnector(Connector):
                 state = SOUND_PROGRAMS[i - 1]
                 self._rpc("PUT", "<Main_Zone><Surround><Program_Sel><Current>"
                                  f"<Sound_Program>{state}</Sound_Program>"
-                                 "</Current></Program_Sel></Main_Zone>")
+                                 "</Current></Program_Sel></Surround></Main_Zone>")
             else:
                 raise RuntimeError(f"périphérique inconnu : {ext}")
             journal.info(self.name, f"pilotage '{device['name']}' -> {state}")
