@@ -94,8 +94,10 @@ h3 { font-size: .88rem; color: var(--amber); margin: 1rem 0 .4rem;
   min-height: 96px;
 }
 /* Toutes les tuiles d'une page ont la même hauteur (les textes libres .wide
-   et les graphes gardent la leur). */
-.grid > .card { height: 122px; min-height: 0; }
+   et les graphes gardent la leur). min-width: 0 : sans lui, un libellé long
+   en nowrap (ex. stop « Surround Decoder ») fixe le min-content de la tuile
+   et élargit sa colonne 1fr — l'ellipse ne joue jamais. */
+.grid > .card { height: 122px; min-height: 0; min-width: 0; }
 .grid > .card.wide { height: auto; }
 /* Tuile pilotable sur échelle : éclaircie depuis le bas à hauteur de la
    consigne (--lvl = position min->max) — sombre au mini, claire au maxi. */
