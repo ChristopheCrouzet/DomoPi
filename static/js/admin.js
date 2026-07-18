@@ -989,6 +989,84 @@
   $("#up-icon").onchange = () => upload("#up-icon", "/api/icons/upload");
   $("#up-bg").onchange = () => upload("#up-bg", "/api/backgrounds/upload");
 
+  /* ============================================ génération d'icônes par IA */
+  /* Le serveur est stateless : l'historique de conversation vit ici et est
+     renvoyé entier à chaque appel — « Ajuster » complète la même discussion,
+     le modèle revoit ses propres SVG (champ raw). Annuler = tout est perdu. */
+  function aiIconDialog() {
+    let history = [], current = [];
+    dialog(`<h2 style="margin-top:0">Générer des icônes par IA</h2>
+      <label for="ai-prompt" id="ai-label">Décrivez la ou les icônes souhaitées</label>
+      <textarea id="ai-prompt" rows="3" style="width:100%"
+        placeholder="Ex. : une pompe à chaleur, versions marche/arrêt"></textarea>
+      <div class="row" style="margin-top:.5rem">
+        <div class="fix"><button class="btn primary" id="ai-send">Générer</button></div>
+        <div class="fix"><button class="btn" id="ai-cancel">Annuler</button></div>
+        <div class="fix" style="margin-left:auto" hidden id="ai-save-w">
+          <button class="btn primary" id="ai-save">Ajouter les icônes cochées</button></div>
+      </div>
+      <p id="ai-status" style="color:var(--muted);margin:.5rem 0 0"></p>
+      <p id="ai-text" style="white-space:pre-wrap;margin:.5rem 0 0"></p>
+      <div class="ai-icons" id="ai-out"></div>`, dlg => {
+      const status = dlg.querySelector("#ai-status"), out = dlg.querySelector("#ai-out"),
+            send = dlg.querySelector("#ai-send"), ta = dlg.querySelector("#ai-prompt");
+      function render() {
+        /* les SVG sont assainis côté serveur — injection directe voulue */
+        out.innerHTML = current.map((ic, i) => `
+          <div class="ai-ic">
+            <div class="prev"><span style="width:42px;height:42px">${ic.svg}</span>
+              <span style="width:96px;height:96px">${ic.svg}</span></div>
+            <input type="text" value="${esc(ic.name)}" data-i="${i}" title="Nom du fichier (.svg)">
+            <label style="font-size:.85rem"><input type="checkbox" checked data-i="${i}"> ajouter</label>
+          </div>`).join("");
+        dlg.querySelector("#ai-save-w").hidden = !current.length;
+      }
+      send.onclick = async () => {
+        const q = ta.value.trim();
+        if (!q) return;
+        history.push({ role: "user", content: q });
+        send.disabled = true;
+        status.textContent = "Génération en cours (15 à 60 s)…";
+        try {
+          const r = await api("/api/icons/generate",
+            { method: "POST", body: JSON.stringify({ messages: history }) });
+          history.push({ role: "assistant", content: r.raw });
+          current = r.icons;
+          render();
+          dlg.querySelector("#ai-text").textContent = r.text;
+          status.textContent = "";
+          ta.value = "";
+          dlg.querySelector("#ai-label").textContent =
+            "Ajuster ou compléter (la conversation continue)";
+          send.textContent = "Ajuster";
+        } catch (e) {
+          history.pop();               // l'échange n'a pas eu lieu
+          status.textContent = e.message;
+        }
+        send.disabled = false;
+      };
+      dlg.querySelector("#ai-save").onclick = async () => {
+        const picks = [];
+        out.querySelectorAll("input[type=checkbox]").forEach(cb => {
+          if (!cb.checked) return;
+          const i = +cb.dataset.i;
+          picks.push({ name: out.querySelector(`input[type=text][data-i="${i}"]`).value.trim(),
+                       svg: current[i].svg });
+        });
+        if (!picks.length) return toast("Aucune icône cochée");
+        try {
+          const r = await api("/api/icons/generate/save",
+            { method: "POST", body: JSON.stringify({ icons: picks }) });
+          toast(`${r.names.length} icône(s) ajoutée(s)`);
+          loadGalleries(); dlg.close();
+        } catch (e) { toast(e.message); }
+      };
+      dlg.querySelector("#ai-cancel").onclick = () => dlg.close();
+      ta.focus();
+    });
+  }
+  $("#ai-icon-btn").onclick = aiIconDialog;
+
   /* ============================================ onglets */
   const TABS = ["pages", "devices", "params", "icons", "general"];
   function showTab(name) {

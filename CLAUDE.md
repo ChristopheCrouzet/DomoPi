@@ -13,10 +13,13 @@ frontend **vanilla JS sans dépendance** (aucun bundler, aucun framework, aucun
 CDN). En production, uvicorn écoute sur `127.0.0.1:8000` derrière **nginx** (TLS)
 et un broker **Mosquitto** local sert le connecteur WES.
 
-Contrainte directrice : ça doit tourner sur un Pi 2 (CPU ARM lent, ~1 Go RAM).
-D'où : pas de dépendances lourdes, SQLite plutôt qu'un SGBD, agrégation des
-mesures pour limiter le volume, un seul worker, graphes rendus en SVG côté
-client sans librairie.
+Contrainte directrice : conçu à l'origine pour un Pi 2 (CPU ARM lent, ~1 Go
+RAM). D'où : pas de dépendances lourdes, SQLite plutôt qu'un SGBD, agrégation
+des mesures pour limiter le volume, un seul worker, graphes rendus en SVG côté
+client sans librairie. Le matériel réel est aujourd'hui un **Raspberry Pi 4
+Model B** (aarch64, Debian 13 « trixie », Python 3.13) — les roues binaires
+pip (piwheels/manylinux aarch64) sont disponibles, donc pas de compilation à
+l'installation — mais la philosophie frugale reste la règle.
 
 ## Arborescence du dépôt
 
@@ -97,8 +100,8 @@ uvicorn domopi.main:app --reload --port 8000
 
 ## Déploiement de test sur le Pi (dev)
 
-Un Raspberry Pi de test (`PI-SERVER`, résolvable sur le LAN) héberge une
-installation DomoPi standard. Pour y pousser le code local et redémarrer :
+Un Raspberry Pi de test (`PI-SERVER`, résolvable sur le LAN — Pi 4 Model B,
+aarch64, Debian 13, Python 3.13) héberge une installation DomoPi standard. Pour y pousser le code local et redémarrer :
 
 ```powershell
 powershell -File "tools\deploy.ps1"
@@ -181,6 +184,31 @@ ressources Claude vivent à la racine de l'espace de travail) encadre ce flux
 pour les demandes ponctuelles d'icônes : contrat de style, méthode, planche
 contact, déploiement — l'utiliser dès qu'on demande une icône. Les icônes ajoutées par l'utilisateur via
 l'upload ne sont pas concernées et sont préservées par l'installeur (`cp -n`).
+
+### Génération d'icônes par IA (`domopi/icon_ai.py`)
+
+Livrée le 18/07/2026 (genèse dans `M:\Domotique\Domopi\ROADMAP-icones-IA.md`,
+hors dépôt) : bouton « ✨ Générer par IA » dans l'onglet Icônes de l'admin →
+dialogue prompt → appel **Claude Sonnet** (`claude-sonnet-5`, effort high)
+depuis le backend → prévisualisation des SVG (42 et 96 px, nom éditable,
+case par icône) → Valider (ajout à `static/icons/`) / Ajuster (itératif,
+historique de conversation conservé côté navigateur — le serveur est
+stateless, le champ `raw` de la réponse repart dans l'historique pour que le
+modèle revoie ses propres SVG) / Annuler.
+
+Architecture :
+
+- **SDK officiel `anthropic`** (validé sur PI-SERVER : aarch64 → roues
+  binaires, pas de compilation), client `AsyncAnthropic` → l'appel ne bloque
+  pas l'unique worker uvicorn.
+- **Clé API** : `ANTHROPIC_API_KEY` dans `/etc/domopi/domopi.env` (root, 600).
+  Jamais en base, jamais envoyée au navigateur ; routes `require_admin`
+  (`POST /api/icons/generate` pour la prévisualisation — aucune écriture
+  disque — et `POST /api/icons/generate/save` pour l'enregistrement).
+- **Style** : prompt système reprenant le contrat de `make_icons.py`
+  (ci-dessus) pour que les icônes générées se fondent dans le jeu existant.
+- **Sanitisation SVG** systématique (génération **et** sauvegarde) : XML bien
+  formé, pas de `script`/`foreignObject`/handlers `on*`/référence externe.
 
 ## Pilotage proportionnel : échelles (`scales` + `devices.scale_id`)
 

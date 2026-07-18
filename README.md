@@ -126,6 +126,16 @@ Tout se fait dans **Paramètres** (bandeau supérieur, compte admin).
   depuis sa tuile comme une sortie et sa valeur est historisée s'il est
   surveillé — pratique pour une consigne ou un mode purement logiciel,
   utilisable ensuite dans les formules d'autres capteurs virtuels.
+- **Icônes** : l'onglet « Icônes et fonds de page » accepte vos propres
+  fichiers SVG/PNG, et propose un bouton « ✨ **Générer par IA** »
+  (administrateur) : décrivez l'icône souhaitée, prévisualisez les
+  propositions (dessinées dans le style du jeu intégré), affinez par
+  retouches successives — la conversation continue tant que le dialogue est
+  ouvert — puis validez pour les ajouter à la galerie. Nécessite une clé API
+  Anthropic dans `/etc/domopi/domopi.env` (`ANTHROPIC_API_KEY=sk-ant-…`, puis
+  `sudo systemctl restart domopi`) ; chaque génération consomme quelques
+  centimes de crédit API. Sans clé configurée, le bouton affiche une erreur
+  explicite et le reste de DomoPi fonctionne normalement.
 - **Comptes** : un administrateur, plus des comptes « lecteur » (consultation et
   pilotage des sorties autorisées, sans accès aux réglages).
 

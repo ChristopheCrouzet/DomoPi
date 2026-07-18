@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, auth, formula, journal, poller
+from . import db, auth, formula, icon_ai, journal, poller
 from .connectors import REGISTRY
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -761,6 +761,73 @@ async def upload_icon(request: Request, file: UploadFile = File(...)):
     name = await _upload(ICONS_DIR, file, {".svg", ".png"}, 1)
     journal.info("icons", f"icône ajoutée : {name}")
     return {"name": name}
+
+
+@app.post("/api/icons/generate")
+async def generate_icons_ai(request: Request):
+    """Prévisualisation d'icônes générées par IA — aucune écriture disque.
+
+    Body : {messages: [{role, content}]} — l'historique complet, tenu par le
+    navigateur (stateless côté serveur, voir icon_ai.py).
+    """
+    auth.require_admin(request)
+    body = await request.json()
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not (1 <= len(messages) <= 40):
+        raise HTTPException(400, "Historique de conversation invalide")
+    clean = []
+    for m in messages:
+        role, content = m.get("role"), m.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str) \
+                or not content.strip() or len(content) > 200_000:
+            raise HTTPException(400, "Historique de conversation invalide")
+        clean.append({"role": role, "content": content})
+    if clean[0]["role"] != "user":
+        raise HTTPException(400, "Historique de conversation invalide")
+    try:
+        result = await icon_ai.generate(clean)
+    except icon_ai.IconAIError as e:
+        raise HTTPException(e.status, str(e))
+    journal.info("icons",
+                 f"génération IA : {len(result['icons'])} icône(s) proposée(s)")
+    return result
+
+
+@app.post("/api/icons/generate/save")
+async def save_generated_icons(request: Request):
+    """Enregistre dans static/icons/ des icônes validées par l'utilisateur."""
+    auth.require_admin(request)
+    body = await request.json()
+    items = body.get("icons")
+    if not isinstance(items, list) or not (1 <= len(items) <= 12):
+        raise HTTPException(400, "Liste d'icônes invalide")
+    to_write, seen = [], set()
+    for it in items:
+        name = str(it.get("name") or "").strip()
+        if name.lower().endswith(".svg"):
+            name = name[:-4]
+        if not _SAFE_NAME.match(name):
+            raise HTTPException(400, f"Nom d'icône invalide : « {name} »")
+        if name in seen:
+            raise HTTPException(400, f"Nom en double : « {name} »")
+        seen.add(name)
+        try:
+            svg = icon_ai.sanitize_svg(it.get("svg"))
+        except icon_ai.IconAIError as e:
+            raise HTTPException(e.status, f"« {name} » : {e}")
+        path = os.path.join(ICONS_DIR, name + ".svg")
+        if os.path.exists(path):
+            raise HTTPException(409, f"L'icône « {name} » existe déjà")
+        to_write.append((name, path, svg))
+    os.makedirs(ICONS_DIR, exist_ok=True)
+    names = []
+    for name, path, svg in to_write:
+        # newline="\n" : même sortie sous Windows et Linux (cf. make_icons.py)
+        with open(path, "w", newline="\n", encoding="utf-8") as f:
+            f.write(svg if svg.endswith("\n") else svg + "\n")
+        names.append(name + ".svg")
+    journal.info("icons", "icônes IA ajoutées : " + ", ".join(names))
+    return {"names": names}
 
 
 @app.post("/api/backgrounds/upload")
