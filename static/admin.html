@@ -91,6 +91,34 @@
     </thead>
     <tbody id="dev-body"></tbody>
   </table>
+
+  <h2>Capteurs virtuels</h2>
+  <p class="muted">Capteurs <b>calculés par formule</b> à partir des autres capteurs :
+     constantes, opérateurs + − × ÷, parenthèses, et fonctions d'historique
+     (Deriver, Min, Max, Moy). La valeur est recalculée et historisée à chaque
+     cycle de collecte, comme un capteur ordinaire (graphes compris). Une
+     formule incalculable (division par zéro…) donne une valeur
+     <i>invalide</i> : tuile marquée invalide, trou dans les graphes.
+     Le bouton <span class="mono">[…]</span> ouvre l'éditeur de formule.
+     <b>Sans formule</b>, le capteur est un état virtuel <b>réglable à la
+     main</b> : cochez « Pilotable » (avec échelle, icônes et unité au besoin)
+     pour le régler depuis sa tuile — un capteur calculé, lui, ne se pilote
+     pas.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Surv.</th>
+        <th title="Masqué : non proposé pour les nouveaux widgets">Masquer</th>
+        <th>Nom</th><th>Pièce</th><th>Unité</th>
+        <th style="width:30%">Formule</th>
+        <th>Pilotable</th>
+        <th title="Échelle de pilotage proportionnel (onglet Paramètres)">Échelle</th>
+        <th>Icônes on / off</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="virt-body"></tbody>
+  </table>
+  <button class="btn" id="virt-add" style="margin-top:.6rem">+ Ajouter un capteur virtuel</button>
   </section>
 
   <section id="tab-params" hidden>
@@ -135,6 +163,24 @@
       </select></div>
     <div><label for="s-jret">Rétention du journal (jours)</label>
       <input id="s-jret" type="number" min="1"></div>
+  </div>
+
+  <h3>Affichage</h3>
+  <div class="row">
+    <div><label for="s-sig">Chiffres significatifs (valeurs des tuiles)</label>
+      <input id="s-sig" type="number" min="3" max="10"></div>
+    <div><label for="s-thou">Séparateur de milliers</label>
+      <select id="s-thou">
+        <option value=" ">Espace</option>
+        <option value="">Aucun</option>
+        <option value=".">Point</option>
+        <option value="'">Apostrophe</option>
+      </select></div>
+    <div><label for="s-dec">Séparateur décimal</label>
+      <select id="s-dec">
+        <option value=",">Virgule</option>
+        <option value=".">Point</option>
+      </select></div>
     <div class="fix"><button class="btn primary" id="s-save">Enregistrer les réglages</button></div>
   </div>
 

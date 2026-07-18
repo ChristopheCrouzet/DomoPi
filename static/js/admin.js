@@ -33,6 +33,10 @@
     $("#s-retention").value = s.raw_retention_days || 120;
     $("#s-jlevel").value = s.journal_level || "medium";
     $("#s-jret").value = s.journal_retention_days || 30;
+    $("#s-sig").value = s.display_sig_digits || 5;
+    // ?? et non || : « Aucun » est la chaîne vide, valeur légitime
+    $("#s-thou").value = s.display_thousands_sep ?? " ";
+    $("#s-dec").value = s.display_decimal_sep || ",";
   }
   $("#s-save").onclick = async () => {
     await api("/api/settings", { method: "PUT", body: JSON.stringify({
@@ -40,7 +44,10 @@
       poll_interval_s: $("#s-interval").value,
       raw_retention_days: $("#s-retention").value,
       journal_level: $("#s-jlevel").value,
-      journal_retention_days: $("#s-jret").value }) });
+      journal_retention_days: $("#s-jret").value,
+      display_sig_digits: $("#s-sig").value,
+      display_thousands_sep: $("#s-thou").value,
+      display_decimal_sep: $("#s-dec").value }) });
     toast("Réglages enregistrés");
   };
 
@@ -71,7 +78,8 @@
   };
 
   async function loadConnectors() {
-    const list = await api("/api/connectors");
+    const list = (await api("/api/connectors"))
+      .filter(c => c.type !== "virtual");   // interne (capteurs virtuels)
     $("#conn-list").innerHTML = list.length ? "" :
       "<p class='muted'>Aucun contrôleur configuré pour l'instant.</p>";
     for (const c of list) {
@@ -269,8 +277,10 @@
     devices.forEach(d =>
       d.scale_name = (scales.find(s => s.id === d.scale_id) || {}).name || "");
     renderDevices();
+    renderVirtuals();
     renderScales();      // compteurs « n périphériques » des cartes d'échelles
   }
+  const isVirtual = d => d.connector_type === "virtual";
   let devSort = { key: "", dir: 1 };
 
   /* Filtres de colonnes mémorisés entre sessions (pas la recherche globale). */
@@ -291,10 +301,44 @@
     });
   }
 
+  /* Câblage commun d'une ligne de périphérique (tableau principal et
+     capteurs virtuels) : enregistrement à la volée, recopie de l'unité de
+     l'échelle au moment du choix, choix des icônes. */
+  function wireDeviceRow(tr, d) {
+    const save = async patch => {
+      Object.assign(d, patch);
+      await api(`/api/devices/${d.id}`, { method: "PUT", body: JSON.stringify(d) });
+    };
+    tr.querySelectorAll("input[data-k], select[data-k]").forEach(inp => inp.onchange = () => {
+      const patch = { [inp.dataset.k]: inp.type === "checkbox" ? inp.checked : inp.value };
+      if (inp.dataset.k === "scale_id") {
+        const sid = inp.value ? +inp.value : null;
+        patch.scale_id = sid;
+        const s = scales.find(x => x.id === sid);
+        d.scale_name = s ? s.name : "";
+        // L'unité de l'échelle (si précisée) est recopiée sur le
+        // périphérique — simple transfert au moment du choix, sans liaison.
+        if (s && s.unit) {
+          patch.unit = s.unit;
+          tr.querySelector('input[data-k="unit"]').value = s.unit;
+        }
+      }
+      // refus serveur (ex : surveillance requise par une formule) : on
+      // resynchronise l'affichage avec l'état réel
+      save(patch).then(() => toast("Enregistré"))
+        .catch(e => { toast(e.message); loadDevices(); });
+    });
+    tr.querySelectorAll("img[data-pick]").forEach(img => img.onclick = () =>
+      pickIcon(chosen => save({ [img.dataset.pick]: chosen }).then(() => {
+        img.src = chosen ? "/static/icons/" + chosen : ""; toast("Icône mise à jour");
+      })));
+    return save;
+  }
+
   function renderDevices() {
     const f = ($("#dev-filter").value || "").toLowerCase();
-    let rows = devices.filter(d =>
-      !f || [d.name, d.room, d.connector_name].join(" ").toLowerCase().includes(f));
+    let rows = devices.filter(d => !isVirtual(d) &&
+      (!f || [d.name, d.room, d.connector_name].join(" ").toLowerCase().includes(f)));
     document.querySelectorAll("#dev-filters [data-f]").forEach(el => {
       const v = el.value, k = el.dataset.f;
       if (v === "") return;
@@ -334,33 +378,8 @@
       </tr>`).join("") || `<tr><td colspan="10" class="muted">Aucun périphérique.
         Utilisez « Découvrir les périphériques » sur un contrôleur.</td></tr>`;
 
-    $("#dev-body").querySelectorAll("tr[data-id]").forEach(tr => {
-      const d = devices.find(x => x.id === +tr.dataset.id);
-      const save = async patch => {
-        Object.assign(d, patch);
-        await api(`/api/devices/${d.id}`, { method: "PUT", body: JSON.stringify(d) });
-      };
-      tr.querySelectorAll("input[data-k], select[data-k]").forEach(inp => inp.onchange = () => {
-        const patch = { [inp.dataset.k]: inp.type === "checkbox" ? inp.checked : inp.value };
-        if (inp.dataset.k === "scale_id") {
-          const sid = inp.value ? +inp.value : null;
-          patch.scale_id = sid;
-          const s = scales.find(x => x.id === sid);
-          d.scale_name = s ? s.name : "";
-          // L'unité de l'échelle (si précisée) est recopiée sur le
-          // périphérique — simple transfert au moment du choix, sans liaison.
-          if (s && s.unit) {
-            patch.unit = s.unit;
-            tr.querySelector('input[data-k="unit"]').value = s.unit;
-          }
-        }
-        save(patch).then(() => toast("Enregistré")).catch(e => toast(e.message));
-      });
-      tr.querySelectorAll("img[data-pick]").forEach(img => img.onclick = () =>
-        pickIcon(chosen => save({ [img.dataset.pick]: chosen }).then(() => {
-          img.src = chosen ? "/static/icons/" + chosen : ""; toast("Icône mise à jour");
-        })));
-    });
+    $("#dev-body").querySelectorAll("tr[data-id]").forEach(tr =>
+      wireDeviceRow(tr, devices.find(x => x.id === +tr.dataset.id)));
   }
   $("#dev-filter").oninput = renderDevices;
   document.querySelectorAll("#dev-filters [data-f]").forEach(el =>
@@ -401,6 +420,170 @@
       }
       dlg.querySelector("#pick-none").onclick = () => { cb(""); dlg.close(); };
       dlg.querySelector("#pick-cancel").onclick = () => dlg.close();
+    });
+  }
+
+  /* ============================================ capteurs virtuels */
+  /* [signature affichée, texte inséré (emplacement capteur vide), position du
+     curseur après insertion, aide] — le capteur se choisit d'un clic ensuite. */
+  const FORMULA_FUNCS = [
+    ["Deriver({capteur}, 1h)", "Deriver(, 1h)", 8,
+     "Dérivée : variation par heure, calculée sur la " +
+     "durée donnée (6min à 24h). Ex : puissance kW depuis un compteur d'énergie kWh."],
+    ["Min({capteur}, 24h)", "Min(, 24h)", 4,
+     "Minimum sur une plage glissante (h ou min, 168h maxi)"],
+    ["Max({capteur}, jour)", "Max(, jour)", 4,
+     "Maximum — plages : durée glissante, heure (heure " +
+     "courante), jour (journée courante) ou hier (journée d'hier complète)"],
+    ["Moy({capteur}, heure)", "Moy(, heure)", 4,
+     "Moyenne — mêmes plages que Min/Max"],
+  ];
+
+  function renderVirtuals() {
+    // ordre de création (id) : un capteur ajouté arrive en fin de liste
+    const rows = devices.filter(isVirtual).sort((a, b) => a.id - b.id);
+    $("#virt-body").innerHTML = rows.map(d => `<tr data-id="${d.id}">
+      <td><input type="checkbox" data-k="monitored" ${d.monitored ? "checked" : ""}></td>
+      <td><input type="checkbox" data-k="hidden" ${d.hidden ? "checked" : ""}
+           title="Ne plus proposer ce capteur pour les nouveaux widgets"></td>
+      <td><input type="text" data-k="name" value="${esc(d.name)}" style="min-width:120px"></td>
+      <td><input type="text" data-k="room" value="${esc(d.room)}" style="width:90px"></td>
+      <td><input type="text" data-k="unit" value="${esc(d.unit)}" style="width:56px"></td>
+      <td><div class="fcell"${d.meta.formula ? ` data-full="${esc(d.meta.formula)}"` : ""}>
+        <span class="fsyn ${d.meta.formula ? "" : "muted"}">${
+          esc(d.meta.formula) || "(aucune formule)"}</span>
+        <button class="btn sm" data-a="formula" title="Éditer la formule">…</button></div></td>
+      <td><input type="checkbox" data-k="controllable"
+           ${d.controllable && !d.meta.formula ? "checked" : ""}
+           ${d.meta.formula ? "disabled" : ""}
+           title="${d.meta.formula
+             ? "Un capteur calculé ne se pilote pas — retirez la formule pour un état réglable à la main"
+             : "État virtuel réglable à la main depuis sa tuile (on/off ou échelle)"}"></td>
+      <td><select data-k="scale_id" title="Échelle de pilotage proportionnel"
+             style="min-width:90px"><option value="">aucune</option>${scales.map(s =>
+             `<option value="${s.id}" ${s.id === d.scale_id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></td>
+      <td><img data-pick="icon_on" src="${d.icon_on ? "/static/icons/" + d.icon_on : ""}"
+           alt="on" title="icône état actif" style="width:26px;height:26px;cursor:pointer;background:var(--panel-2);border-radius:5px;padding:2px">
+          <img data-pick="icon_off" src="${d.icon_off ? "/static/icons/" + d.icon_off : ""}"
+           alt="off" title="icône état inactif" style="width:26px;height:26px;cursor:pointer;background:var(--panel-2);border-radius:5px;padding:2px"></td>
+      <td><button class="btn sm danger" data-a="del" title="Supprimer ce capteur virtuel">✕</button></td>
+      </tr>`).join("") || `<tr><td colspan="10" class="muted">Aucun capteur
+        virtuel pour l'instant.</td></tr>`;
+
+    $("#virt-body").querySelectorAll("tr[data-id]").forEach(tr => {
+      const d = devices.find(x => x.id === +tr.dataset.id);
+      wireDeviceRow(tr, d);
+      tr.querySelector("[data-a=formula]").onclick = () => openFormula(d);
+      tr.querySelector("[data-a=del]").onclick = async () => {
+        if (!confirm(`Supprimer le capteur virtuel « ${d.name} » ?\n` +
+                     "Son historique et ses widgets seront supprimés.")) return;
+        await api(`/api/devices/${d.id}`, { method: "DELETE" });
+        toast("Capteur supprimé"); loadDevices();
+      };
+    });
+  }
+
+  $("#virt-add").onclick = async () => {
+    const r = await api("/api/devices/virtual", { method: "POST", body: "{}" });
+    await loadDevices();
+    const d = devices.find(x => x.id === r.id);
+    if (d) openFormula(d);
+  };
+
+  /* Éditeur de formule : validation en direct côté serveur, insertion par
+     clic depuis les listes de fonctions et de capteurs, aide sur la syntaxe. */
+  function openFormula(d) {
+    const sensors = devices.filter(x => x.id !== d.id)
+      .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+    let valid = false, timer = null;
+    dialog(`<h2 style="margin-top:0">Formule — ${esc(d.name)}</h2>
+      <textarea id="vf-text" spellcheck="false"
+        placeholder="Ex : Deriver({Compteur EDF}, 1h) - {Départ Chauffage}">${esc(d.meta.formula || "")}</textarea>
+      <div id="vf-status" class="muted"></div>
+      <div class="vf-lists">
+        <div class="pane"><h4>Fonctions</h4><ul>${FORMULA_FUNCS.map(([sig, ins, caret, help]) =>
+          `<li data-ins="${esc(ins)}" data-caret="${caret}" title="Cliquer pour insérer">
+             <span class="mono">${esc(sig)}</span><small>${esc(help)}</small></li>`).join("")}</ul></div>
+        <div class="pane"><h4>Capteurs disponibles</h4>
+          <input id="vf-find" type="text" placeholder="filtrer…" style="margin-bottom:.3rem">
+          <ul id="vf-devs">${sensors.map(s =>
+            `<li data-ins="{${esc(s.name)}}" title="Cliquer pour insérer">
+               <span class="mono">{${esc(s.name)}}</span>
+               <small>${esc(s.room || "")}${s.room ? " · " : ""}${
+                 s.monitored ? "historisé" : "non surveillé"}</small></li>`).join("")}</ul></div>
+      </div>
+      <details style="margin-top:.5rem"><summary class="muted" style="cursor:pointer">Aide sur la syntaxe</summary>
+        <ul class="muted" style="font-size:.85rem;line-height:1.5;margin:.4rem 0 0;padding-left:1.1rem">
+          <li>références de capteurs entre accolades : <span class="mono">{Nom du capteur}</span>
+            (casse, accents et espaces superflus ignorés) ;</li>
+          <li>constantes avec point décimal (<span class="mono">3.5</span>),
+            opérateurs <span class="mono">+ - * /</span> et parenthèses ;
+            séparateur d'arguments <span class="mono">,</span> ou <span class="mono">;</span> ;</li>
+          <li>durées : nombre + <span class="mono">h</span> (défaut) ou
+            <span class="mono">min</span> — <span class="mono">1h</span>,
+            <span class="mono">30min</span>, <span class="mono">1.5h</span> ;</li>
+          <li>plages de Min/Max/Moy : durée glissante, <span class="mono">heure</span>
+            (heure courante), <span class="mono">jour</span> (journée courante)
+            ou <span class="mono">hier</span> (journée d'hier complète) — ex.
+            énergie du jour : <span class="mono">Max({c}, jour) - Min({c}, jour)</span> ;</li>
+          <li>les fonctions exigent un capteur <b>surveillé</b> (elles lisent
+            l'historique) ; division par zéro, référence introuvable ou
+            historique insuffisant → valeur <i>invalide</i> (trou dans les graphes) ;</li>
+          <li>si un capteur est renommé, adaptez les formules qui l'utilisent.</li>
+        </ul></details>
+      <div class="row" style="margin-top:1rem">
+        <button class="btn primary" id="vf-save">Enregistrer</button>
+        <button class="btn" id="vf-cancel">Annuler</button></div>`, dlg => {
+      const ta = dlg.querySelector("#vf-text"), st = dlg.querySelector("#vf-status"),
+            save = dlg.querySelector("#vf-save");
+      const check = async () => {
+        const text = ta.value.trim();
+        if (!text) {
+          valid = true; save.disabled = false;
+          st.className = "muted";
+          st.textContent = "Formule vide : le capteur restera « invalide ».";
+          return;
+        }
+        try {
+          const r = await api("/api/formula/check", { method: "POST",
+            body: JSON.stringify({ formula: text }) });
+          valid = r.ok;
+          st.className = "err";
+          if (r.ok) {
+            st.className = "ok";
+            st.textContent = "✓ Formule valide" +
+              (r.warnings.length ? " — " + r.warnings.join(" ; ") : "");
+          } else st.textContent = "✗ " + r.error;
+        } catch (e) { valid = false; st.className = "err"; st.textContent = "✗ " + e.message; }
+        save.disabled = !valid;
+      };
+      ta.oninput = () => { clearTimeout(timer); timer = setTimeout(check, 350); };
+      check();
+      /* caret : position du curseur dans le texte inséré (fonctions : sur
+         l'emplacement capteur vide, pour cliquer le capteur juste après). */
+      const insert = (txt, caret) => {
+        const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
+        ta.value = ta.value.slice(0, a) + txt + ta.value.slice(b);
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = a + (caret ?? txt.length);
+        ta.oninput();
+      };
+      dlg.querySelectorAll("[data-ins]").forEach(li => li.onclick = () =>
+        insert(li.dataset.ins, li.dataset.caret ? +li.dataset.caret : undefined));
+      const find = dlg.querySelector("#vf-find");
+      find.oninput = () => {
+        const q = find.value.toLowerCase();
+        dlg.querySelectorAll("#vf-devs li").forEach(li =>
+          li.hidden = !!q && !li.textContent.toLowerCase().includes(q));
+      };
+      dlg.querySelector("#vf-cancel").onclick = () => dlg.close();
+      save.onclick = async () => {
+        try {
+          await api(`/api/devices/${d.id}`, { method: "PUT",
+            body: JSON.stringify(Object.assign({}, d, { formula: ta.value.trim() })) });
+          dlg.close(); toast("Formule enregistrée"); loadDevices();
+        } catch (e) { toast("Échec : " + e.message); }
+      };
     });
   }
 

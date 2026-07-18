@@ -30,11 +30,13 @@ domopi setup/
 │   ├── db.py                schéma SQLite, réglages, query_series, rollup/purge
 │   ├── auth.py              PBKDF2 + cookie de session signé HMAC, rôles
 │   ├── journal.py           journal applicatif avec niveaux de verbosité
+│   ├── formula.py           moteur de formules des capteurs virtuels
 │   ├── poller.py            boucle asyncio de collecte + rollup quotidien + purge journal hebdo
 │   └── connectors/
 │       ├── base.py          classe abstraite Connector
 │       ├── eedomus.py       API locale eedomus (httpx)
 │       ├── wes_mqtt.py      client MQTT HA-Discovery (paho-mqtt)
+│       ├── virtual.py       connecteur interne des capteurs virtuels (formules)
 │       └── __init__.py      REGISTRY {type: classe}
 ├── static/                  frontend
 │   ├── index.html           visualiseur (SPA)
@@ -232,6 +234,53 @@ serveur). Exemples : gradateur 0-100 %, consigne 12-25 °C par 0.5 avec boutons
   ceux du périphérique ; sinon, état partiel affiché par superposition icône
   off + icône on découpée par `clip-path: inset(calc(100% - var(--pct)) 0 0 0)`
   (classe `.stack`) — `--pct` = position normalisée sur la plage de l'échelle.
+
+## Capteurs virtuels (formula.py + connectors/virtual.py)
+
+Capteurs **calculés par formule**, créés dans l'admin (onglet Périphériques,
+section « Capteurs virtuels »). Implémentation : un connecteur interne unique
+`type='virtual'` (seedé par `init_db()`, marqué par le réglage
+`virtual_connector_id`, masqué dans l'admin, non supprimable) ; chaque capteur
+virtuel est une ligne `devices` ordinaire de ce connecteur (`kind='sensor'`,
+`external_id='virt-<ms>'`), la formule vivant dans `meta["formula"]` — aucun
+changement de schéma. Tout le reste (widgets, échelles, icônes, historique,
+graphes, rollup) fonctionne donc sans cas particulier.
+
+- **Langage** (`formula.py`) : constantes (point décimal), références
+  `{Nom du capteur}` (casse/accents/espaces superflus ignorés — nom ambigu =
+  erreur de validation), opérateurs `+ - * /`, parenthèses, fonctions
+  `Deriver({c}, durée)` (dérivée par heure, durée 6min-24h — puissance kW
+  depuis un compteur kWh) et `Min/Max/Moy({c}, plage)` (plage glissante ≤168h,
+  `heure` = heure courante, `jour` = journée courante, `hier` = journée d'hier
+  complète, heure locale).
+  Séparateur d'arguments `,` ou `;`. Les fonctions lisent `measures` → elles
+  exigent un capteur surveillé ; une référence simple lit `last_value`.
+- **Évaluation** : `poll_once()` interroge le connecteur virtuel **en dernier**
+  (ORDER BY dans poller.py) pour calculer sur les valeurs fraîches du cycle.
+  Un `Resolver` par cycle (snapshot des devices) est partagé par toutes les
+  formules ; les AST sont mis en cache par texte dans l'instance du connecteur.
+  `/api/devices/refresh` recalcule aussi à la demande (widgets affichés).
+- **NaN** : division par zéro, référence introuvable, historique insuffisant…
+  → le connecteur renvoie la chaîne `"NaN"` ; le poller pose
+  `last_value='NaN'` **sans historiser** → tuile « invalide » (app.js) et
+  lever de crayon sur les graphes (charts.js casse le tracé quand l'écart
+  entre points dépasse 1,5 × l'écart médian).
+- **API** : `POST /api/devices/virtual` (création), `DELETE /api/devices/{id}`
+  (capteurs virtuels seulement), `POST /api/formula/check` (validation pour
+  l'éditeur — syntaxe + résolution des références), clé `formula` acceptée par
+  `PUT /api/devices/{id}` (validée avant enregistrement).
+- **UI** : tableau dédié sous le tableau des périphériques (mêmes colonnes
+  qu'un capteur + Formule tronquée + bouton `…` → éditeur avec validation en
+  direct, listes cliquables des fonctions et des capteurs, aide syntaxe).
+- **Garde-fou** : `PUT /api/devices/{id}` refuse (400) de retirer la
+  surveillance d'un capteur référencé par une fonction d'historique d'une
+  formule (`formula.history_users`) — une référence simple n'exige rien.
+- **Sans formule = état réglable à la main** : `set_value()` écrit
+  `last_value` (on/off traduits en 1/0) et `poll()` rejoue la valeur courante
+  → historisée à chaque cycle si surveillé. Avec formule, le pilotage est
+  refusé et `PUT /api/devices/{id}` force `controllable=0` (case grisée dans
+  l'admin) ; Échelle/Icônes/Unité restent actifs dans les deux cas
+  (affichage).
 
 ## Collecte (poller.py)
 

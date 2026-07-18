@@ -133,6 +133,9 @@ DEFAULT_SETTINGS = {
     "journal_level": "medium",       # verbose | medium | errors
     "journal_retention_days": "30",
     "site_title": "DomoPi",
+    "display_sig_digits": "5",       # chiffres significatifs des valeurs affichées
+    "display_thousands_sep": " ",    # séparateur de milliers ("" = aucun)
+    "display_decimal_sep": ",",
 }
 
 
@@ -175,7 +178,20 @@ def init_db():
                      "AND (unit IS NULL OR unit='')")
         conn.execute("INSERT INTO settings(key,value) VALUES('default_scale_id',?)",
                      (str(cur.lastrowid),))
+    # Connecteur interne des capteurs virtuels (capteurs calculés par formule),
+    # créé une seule fois et repéré par le réglage virtual_connector_id.
+    if conn.execute("SELECT 1 FROM settings WHERE key='virtual_connector_id'").fetchone() is None:
+        cur = conn.execute(
+            "INSERT INTO connectors(type,name,enabled,config) "
+            "VALUES('virtual','Capteurs virtuels',1,'{}')")
+        conn.execute("INSERT INTO settings(key,value) VALUES('virtual_connector_id',?)",
+                     (str(cur.lastrowid),))
     conn.commit()
+
+
+def virtual_connector_id() -> int:
+    """Id du connecteur interne des capteurs virtuels (0 si pas encore seedé)."""
+    return int(get_setting("virtual_connector_id", "0") or 0)
 
 
 # ---------------------------------------------------------------- settings

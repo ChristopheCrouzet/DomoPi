@@ -21,6 +21,11 @@
     return ticks;
   }
 
+  /* Valeurs numériques : réglages d'affichage du visualiseur (app.js expose
+     window.fmtNum) ; repli sur l'ancien format si chargé sans app.js. */
+  const fmtNum = v => window.fmtNum ? window.fmtNum(v)
+    : (Math.abs(v) >= 1000 ? v.toFixed(0) : +v.toFixed(2));
+
   function fmtTime(ts, spanS) {
     const d = new Date(ts * 1000);
     if (spanS <= 2 * 86400) return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -59,7 +64,7 @@
         stroke: "#2b3442", "stroke-width": .6 }));
       const t = el("text", { x: M.l - 6, y: Y(v) + 3.5, fill: "#8b97a5",
         "font-size": 10, "text-anchor": "end", "font-family": "monospace" });
-      t.textContent = Math.abs(v) >= 1000 ? v.toFixed(0) : +v.toFixed(2);
+      t.textContent = fmtNum(v);
       svg.appendChild(t);
     }
     const nx = 5;
@@ -71,26 +76,50 @@
       svg.appendChild(t);
     }
 
-    const line = key => pts.map((p, i) =>
-      (i ? "L" : "M") + X(p.t).toFixed(1) + " " + Y(band ? p[key] : p.v).toFixed(1)).join("");
+    /* Lever de crayon : une interruption de mesures (valeur invalide d'un
+       capteur calculé, capteur muet...) casse le tracé au lieu de tirer un
+       trait sur le trou. Seuil : écart > 1.5 x l'écart médian entre points. */
+    const dts = pts.slice(1).map((p, i) => p.t - pts[i].t).sort((a, b) => a - b);
+    const maxDt = Math.max(90, (dts[Math.floor(dts.length / 2)] || 0) * 1.5);
+    const segs = [];
+    let seg = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].t - pts[i - 1].t > maxDt) { segs.push(seg); seg = []; }
+      seg.push(pts[i]);
+    }
+    segs.push(seg);
 
-    if (band) {
-      const up = pts.map((p, i) => (i ? "L" : "M") + X(p.t).toFixed(1) + " " + Y(p.max).toFixed(1)).join("");
-      const down = pts.slice().reverse().map(p => "L" + X(p.t).toFixed(1) + " " + Y(p.min).toFixed(1)).join("");
-      svg.appendChild(el("path", { d: up + down + "Z", fill: "#e8a13c", "fill-opacity": .14, stroke: "none" }));
-      svg.appendChild(el("path", { d: line("max"), fill: "none", stroke: "#e05b4f", "stroke-width": 1 }));
-      svg.appendChild(el("path", { d: line("min"), fill: "none", stroke: "#4f9de0", "stroke-width": 1 }));
-      svg.appendChild(el("path", { d: line("avg"), fill: "none", stroke: "#e8a13c", "stroke-width": 1.8 }));
-    } else {
-      svg.appendChild(el("path", { d: line("v"), fill: "none", stroke: "#e8a13c",
-        "stroke-width": 1.6, "stroke-linejoin": "round" }));
+    const path = (s, key) => s.map((p, i) =>
+      (i ? "L" : "M") + X(p.t).toFixed(1) + " " + Y(band ? p[key] : p.v).toFixed(1)).join("");
+    const dot = (p, key, color, r) =>
+      svg.appendChild(el("circle", { cx: X(p.t).toFixed(1),
+        cy: Y(band ? p[key] : p.v).toFixed(1), r, fill: color }));
+
+    for (const s of segs) {
+      if (s.length === 1) {           // point isolé : un disque, sinon rien ne se verrait
+        if (band) { dot(s[0], "max", "#e05b4f", 1.4); dot(s[0], "min", "#4f9de0", 1.4); }
+        dot(s[0], "avg", "#e8a13c", 1.8);
+        continue;
+      }
+      if (band) {
+        const up = path(s, "max");
+        const down = s.slice().reverse().map(p =>
+          "L" + X(p.t).toFixed(1) + " " + Y(p.min).toFixed(1)).join("");
+        svg.appendChild(el("path", { d: up + down + "Z", fill: "#e8a13c", "fill-opacity": .14, stroke: "none" }));
+        svg.appendChild(el("path", { d: path(s, "max"), fill: "none", stroke: "#e05b4f", "stroke-width": 1 }));
+        svg.appendChild(el("path", { d: path(s, "min"), fill: "none", stroke: "#4f9de0", "stroke-width": 1 }));
+        svg.appendChild(el("path", { d: path(s, "avg"), fill: "none", stroke: "#e8a13c", "stroke-width": 1.8 }));
+      } else {
+        svg.appendChild(el("path", { d: path(s, "v"), fill: "none", stroke: "#e8a13c",
+          "stroke-width": 1.6, "stroke-linejoin": "round" }));
+      }
     }
 
     /* Curseur au survol : ligne verticale accrochée au point réel le plus
        proche, avec étiquette date (+ heure en mode "raw", <= 4 j) et
        valeur(s) courante(s). Position verticale de l'étiquette fixe (haut du
        graphe) — seule l'abscisse suit la souris. */
-    const fmtVal = v => (Math.abs(v) >= 1000 ? v.toFixed(0) : +v.toFixed(2)) +
+    const fmtVal = v => fmtNum(v) +
       (opts.unit ? " " + opts.unit : "");
     const fmtCursorDate = (ts, withTime) => {
       const d = new Date(ts * 1000);

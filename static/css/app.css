@@ -76,6 +76,8 @@ h1 { font-size: 1.25rem; margin: .2rem 0 1rem; letter-spacing: .04em; }
 h2 { font-size: 1.02rem; color: var(--amber); margin: 1.4rem 0 .6rem;
      text-transform: uppercase; letter-spacing: .1em; border-bottom: 1px solid var(--line);
      padding-bottom: .3rem; }
+h3 { font-size: .88rem; color: var(--amber); margin: 1rem 0 .4rem;
+     text-transform: uppercase; letter-spacing: .08em; }
 .muted { color: var(--muted); }
 .crumbs { color: var(--muted); font-size: .85rem; margin-bottom: .8rem; }
 .crumbs a { color: var(--muted); }
@@ -120,6 +122,8 @@ input[type=range] { accent-color: var(--amber); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .card .value.off { color: var(--muted); }
+/* capteur calculé incalculable (division par zéro, référence absente...) */
+.card .value .invalid { color: var(--muted); font-style: italic; font-size: .95rem; }
 /* badge en surimpression : ne change pas la hauteur de la tuile */
 .card .stale { position: absolute; top: .25rem; right: .45rem;
   color: var(--err); font-size: .72rem; text-align: right; }
@@ -188,6 +192,44 @@ tr:hover td { background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
   width: 100%; min-width: 64px; font-size: .78rem; padding: .2rem .35rem;
 }
 td .mono { font-family: var(--mono); }
+/* capteurs virtuels : synthèse de formule tronquée (max-width borne aussi la
+   largeur que l'algorithme de table accorde à la colonne — sans elle, une
+   formule longue en nowrap élargit la colonne et décale tout le tableau) */
+.fsyn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: .82rem; }
+.fcell { display: flex; align-items: center; gap: .4rem; position: relative;
+  min-width: 120px; max-width: 300px; }
+.fcell .fsyn { flex: 1 1 auto; min-width: 0; }
+/* formule complète en infobulle multiligne au survol du texte tronqué */
+.fcell[data-full]:has(.fsyn:hover)::after {
+  content: attr(data-full);
+  position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30;
+  width: max-content; max-width: min(70vw, 480px);
+  white-space: pre-wrap; overflow-wrap: break-word;
+  font-family: var(--mono); font-size: .8rem; line-height: 1.4;
+  background: #161c24; color: var(--txt);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: .4rem .6rem; box-shadow: 0 5px 16px rgba(0,0,0,.45);
+  pointer-events: none;
+}
+#vf-text { width: 100%; min-height: 4.2rem; font-family: var(--mono);
+  font-size: .9rem; resize: vertical; }
+#vf-status { min-height: 1.3rem; font-size: .85rem; margin: .25rem 0 .5rem; }
+#vf-status.ok { color: #6fbf73; }
+#vf-status.err { color: var(--err); }
+.vf-lists { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.vf-lists .pane { border: 1px solid var(--line); border-radius: 8px;
+  padding: .45rem; min-width: 0; }
+.vf-lists h4 { margin: 0 0 .3rem; font-size: .8rem; color: var(--amber);
+  text-transform: uppercase; letter-spacing: .06em; }
+.vf-lists ul { list-style: none; margin: 0; padding: 0; max-height: 180px;
+  overflow-y: auto; }
+.vf-lists li { padding: .22rem .3rem; border-radius: 5px; cursor: pointer;
+  font-size: .84rem; line-height: 1.25; }
+.vf-lists li:hover { background: var(--panel-2); }
+.vf-lists li .mono { font-size: .82rem; }
+.vf-lists li small { color: var(--muted); display: block; }
+@media (max-width: 700px) { .vf-lists { grid-template-columns: 1fr; } }
 .lvl-ERROR { color: var(--err); } .lvl-WARNING { color: var(--warn); }
 .lvl-INFO { color: var(--txt); } .lvl-DEBUG { color: var(--muted); }
 

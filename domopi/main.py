@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, auth, journal, poller
+from . import db, auth, formula, journal, poller
 from .connectors import REGISTRY
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -81,7 +81,18 @@ async def me(request: Request):
 
 # ================================================================ paramètres
 SETTABLE = {"poll_interval_s", "raw_retention_days", "journal_level",
-            "journal_retention_days", "site_title"}
+            "journal_retention_days", "site_title",
+            "display_sig_digits", "display_thousands_sep", "display_decimal_sep"}
+
+# Réglages d'affichage exposés aux lecteurs (le visualiseur formate les valeurs
+# des tuiles avec, sans avoir accès aux réglages complets réservés à l'admin).
+DISPLAY_KEYS = ("display_sig_digits", "display_thousands_sep", "display_decimal_sep")
+
+
+@app.get("/api/display")
+async def get_display(request: Request):
+    auth.require_user(request)
+    return {k: db.get_setting(k, db.DEFAULT_SETTINGS[k]) for k in DISPLAY_KEYS}
 
 
 @app.get("/api/settings")
@@ -154,7 +165,7 @@ async def change_password(uid: int, request: Request):
 @app.get("/api/connector-types")
 async def connector_types(request: Request):
     auth.require_admin(request)
-    return list(REGISTRY.keys())
+    return [t for t in REGISTRY if t != "virtual"]   # interne, pas créable
 
 
 @app.get("/api/connectors")
@@ -194,6 +205,8 @@ async def update_connector(cid: int, request: Request):
 @app.delete("/api/connectors/{cid}")
 async def delete_connector(cid: int, request: Request):
     auth.require_admin(request)
+    if cid == db.virtual_connector_id():
+        raise HTTPException(400, "Le connecteur des capteurs virtuels ne se supprime pas")
     db.get_conn().execute("DELETE FROM connectors WHERE id=?", (cid,))
     db.get_conn().commit()
     return {"ok": True}
@@ -410,6 +423,57 @@ async def list_devices(request: Request, monitored: int | None = None):
     return out
 
 
+@app.post("/api/devices/virtual")
+async def create_virtual_device(request: Request):
+    """Crée un capteur virtuel (capteur calculé par formule)."""
+    auth.require_admin(request)
+    b = await request.json()
+    vid = db.virtual_connector_id()
+    if not vid:
+        raise HTTPException(500, "Connecteur virtuel absent")
+    text = str(b.get("formula") or "").strip()
+    if text:
+        chk = formula.validate(text)
+        if not chk["ok"]:
+            raise HTTPException(400, f"Formule invalide : {chk['error']}")
+    name = str(b.get("name") or "").strip() or "Capteur calculé"
+    conn = db.get_conn()
+    cur = conn.execute(
+        "INSERT INTO devices(connector_id,external_id,name,kind,unit,room,"
+        "monitored,meta) VALUES(?,?,?,'sensor',?,?,1,?)",
+        (vid, f"virt-{int(time.time() * 1000)}", name,
+         str(b.get("unit") or ""), str(b.get("room") or ""),
+         json.dumps({"formula": text})))
+    conn.commit()
+    journal.info("devices", f"capteur virtuel créé : {name}")
+    return {"id": cur.lastrowid}
+
+
+@app.delete("/api/devices/{did}")
+async def delete_device(did: int, request: Request):
+    """Suppression — capteurs virtuels seulement (les périphériques d'un
+    contrôleur reviendraient à la découverte suivante)."""
+    auth.require_admin(request)
+    conn = db.get_conn()
+    row = conn.execute("SELECT * FROM devices WHERE id=?", (did,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Périphérique inconnu")
+    if row["connector_id"] != db.virtual_connector_id():
+        raise HTTPException(400, "Seuls les capteurs virtuels se suppriment ici")
+    conn.execute("DELETE FROM devices WHERE id=?", (did,))
+    conn.commit()
+    journal.info("devices", f"capteur virtuel supprimé : {row['name']}")
+    return {"ok": True}
+
+
+@app.post("/api/formula/check")
+async def check_formula(request: Request):
+    """Validation d'une formule pour l'éditeur (syntaxe + références)."""
+    auth.require_admin(request)
+    b = await request.json()
+    return formula.validate(str(b.get("formula") or ""))
+
+
 @app.put("/api/devices/{did}")
 async def update_device(did: int, request: Request):
     auth.require_admin(request)
@@ -418,6 +482,29 @@ async def update_device(did: int, request: Request):
     row = conn.execute("SELECT * FROM devices WHERE id=?", (did,)).fetchone()
     if not row:
         raise HTTPException(404, "Périphérique inconnu")
+    # Formule (capteurs virtuels uniquement, clé "formula" du corps) : validée
+    # avant enregistrement dans meta ; vide autorisé (capteur alors invalide).
+    meta = json.loads(row["meta"] or "{}")
+    is_virtual = row["connector_id"] == db.virtual_connector_id()
+    if "formula" in b and is_virtual:
+        text = str(b.get("formula") or "").strip()
+        if text:
+            chk = formula.validate(text)
+            if not chk["ok"]:
+                raise HTTPException(400, f"Formule invalide : {chk['error']}")
+        meta["formula"] = text
+    # Un capteur calculé (formule associée) ne se pilote pas : seul un capteur
+    # virtuel sans formule est un état réglable à la main.
+    computed = is_virtual and (meta.get("formula") or "").strip()
+    # La surveillance ne se retire pas tant qu'une fonction d'historique
+    # (Deriver/Min/Max/Moy) d'un capteur virtuel s'appuie sur ce capteur.
+    if row["monitored"] and not b.get("monitored", True):
+        users = formula.history_users(row["name"])
+        if users:
+            raise HTTPException(400,
+                f"Surveillance requise : « {row['name']} » alimente une fonction "
+                f"d'historique (Deriver/Min/Max/Moy) de : {', '.join(users)}. "
+                "Modifiez d'abord cette formule.")
     # Échelle de pilotage : l'échelle doit exister. Autorisée aussi sur les
     # capteurs (capteurs virtuels pilotables d'une box : consignes, modes...).
     sid = b.get("scale_id", row["scale_id"])
@@ -432,16 +519,18 @@ async def update_device(did: int, request: Request):
             raise HTTPException(400, "Échelle inconnue")
     conn.execute(
         "UPDATE devices SET name=?, monitored=?, controllable=?, dimmable=?, "
-        "scale_id=?, hidden=?, icon_on=?, icon_off=?, unit=?, room=? WHERE id=?",
+        "scale_id=?, hidden=?, icon_on=?, icon_off=?, unit=?, room=?, meta=? "
+        "WHERE id=?",
         (b.get("name", row["name"]),
          1 if b.get("monitored", row["monitored"]) else 0,
          # pilotable aussi pour un capteur (capteur virtuel d'une box)
-         1 if b.get("controllable", row["controllable"]) else 0,
+         1 if b.get("controllable", row["controllable"]) and not computed else 0,
          1 if b.get("dimmable", row["dimmable"]) and row["kind"] == "actuator" else 0,
          sid,
          1 if b.get("hidden", row["hidden"]) else 0,
          b.get("icon_on", row["icon_on"]), b.get("icon_off", row["icon_off"]),
-         b.get("unit", row["unit"]), b.get("room", row["room"]), did))
+         b.get("unit", row["unit"]), b.get("room", row["room"]),
+         json.dumps(meta), did))
     conn.commit()
     return {"ok": True}
 

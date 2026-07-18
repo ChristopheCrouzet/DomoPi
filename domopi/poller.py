@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 
 from . import db, journal
@@ -44,7 +45,10 @@ def get_instance(connector_id: int):
 def poll_once():
     conn = db.get_conn()
     now = int(time.time())
-    for c in conn.execute("SELECT id,name FROM connectors WHERE enabled=1").fetchall():
+    # Le connecteur virtuel passe en dernier : ses formules calculent ainsi
+    # sur les valeurs fraîches des capteurs relevés dans ce même cycle.
+    for c in conn.execute("SELECT id,name FROM connectors WHERE enabled=1 "
+                          "ORDER BY (type='virtual'), id").fetchall():
         inst = get_instance(c["id"])
         if inst is None:
             continue
@@ -65,12 +69,22 @@ def poll_once():
                 continue
             journal.debug(c["name"], f"{d['name']} = {v}")
             try:
-                db.store_measure(d["id"], now, float(str(v).replace(",", ".")))
+                val = float(str(v).replace(",", "."))
             except ValueError:
                 # valeur non numérique (état texte) : on met à jour l'état courant
                 conn.execute("UPDATE devices SET last_value=?, last_seen=? WHERE id=?",
                              (str(v), now, d["id"]))
                 conn.commit()
+                continue
+            if math.isnan(val):
+                # capteur calculé incalculable (division par zéro...) : état
+                # « NaN » affiché invalide, jamais historisé -> lever de
+                # crayon sur les graphes
+                conn.execute("UPDATE devices SET last_value='NaN', last_seen=? WHERE id=?",
+                             (now, d["id"]))
+                conn.commit()
+            else:
+                db.store_measure(d["id"], now, val)
     journal.debug("poller", "cycle de collecte terminé")
 
 

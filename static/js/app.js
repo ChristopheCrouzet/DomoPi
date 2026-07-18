@@ -3,6 +3,7 @@
   const $ = s => document.querySelector(s);
   let me = null, pages = [], devices = {}, currentPage = null, refreshTimer = null;
   let currentWidgets = [], liveTimers = [];
+  let disp = { sig: 5, thou: " ", dec: "," };   // réglages d'affichage (serveur)
 
   const api = async (url, opts) => {
     const r = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
@@ -56,8 +57,12 @@
 
   /* ------------------------------------------------ données */
   async function loadAll() {
-    pages = await api("/api/pages");
-    (await api("/api/devices")).forEach(d => devices[d.id] = d);
+    const [pg, devs, dp] = await Promise.all(
+      [api("/api/pages"), api("/api/devices"), api("/api/display")]);
+    pages = pg; devs.forEach(d => devices[d.id] = d);
+    disp = { sig: Math.max(3, parseInt(dp.display_sig_digits, 10) || 5),
+             thou: dp.display_thousands_sep ?? " ",
+             dec: dp.display_decimal_sep || "," };
     buildRootNav();
   }
   async function refreshValues() {
@@ -258,11 +263,27 @@
   }
 
   /* ------------------------------------------------ widget périphérique */
-  /* Format d'une valeur au pas de l'échelle (10 -> "20", 0.1 -> "19.5"). */
-  const fmtScale = (v, step) => {
-    const dec = (String(step ?? 1).split(".")[1] || "").length;
-    return (+v).toFixed(dec);
-  };
+  /* Format d'une valeur numérique : au plus `disp.sig` chiffres significatifs
+     (défaut 5) et 2 décimales, partie entière toujours complète (jamais de
+     notation ingénieur), séparateurs de milliers et décimal configurables
+     (Réglages généraux → Affichage). `stepDec` (décimales du pas d'une
+     échelle : 10 -> 0, 0.5 -> 1) fixe le nombre de décimales, borné par la
+     règle ci-dessus ; sans échelle, les zéros finaux sont retirés. */
+  function fmtNum(v, stepDec) {
+    const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+    if (!isFinite(n)) return String(v ?? "—");
+    const ints = Math.max(1, Math.floor(Math.log10(Math.abs(n))) + 1);
+    const cap = Math.max(0, Math.min(2, disp.sig - ints));
+    let s = Math.abs(n).toFixed(stepDec == null ? cap : Math.min(stepDec, cap));
+    if (stepDec == null) s = String(+s);
+    const [ip, fp] = s.split(".");
+    return (n < 0 ? "-" : "") + ip.replace(/\B(?=(\d{3})+$)/g, disp.thou) +
+           (fp ? disp.dec + fp : "");
+  }
+  window.fmtNum = fmtNum;   // utilisé par charts.js (axes et infobulles)
+  /* Format d'une valeur au pas de l'échelle (10 -> "20", 0.1 -> "19,5"). */
+  const fmtScale = (v, step) =>
+    fmtNum(+v, (String(step ?? 1).split(".")[1] || "").length);
 
   function deviceCard(w) {
     const d = devices[w.device_id] || {};
@@ -309,10 +330,16 @@
         : (d.icon_on || d.icon_off);
       if (icon) iconHtml = `<div class="icon"><img src="/static/icons/${icon}" alt=""></div>`;
     }
-    const valueHtml = sc && !isNaN(num)
+    // Sans échelle, seule une valeur purement numérique est reformatée
+    // (les états texte « on », « Ouvert »... restent tels quels).
+    // « NaN » = capteur calculé incalculable (division par zéro...) : invalide.
+    const invalid = /^nan$/i.test(String(d.last_value ?? "").trim());
+    const valueHtml = invalid ? `<span class="invalid">invalide</span>`
+      : sc && !isNaN(num)
       ? (stop && stop.label ? stop.label
          : fmtScale(num, sc.step) + (d.unit ? " " + d.unit : ""))
-      : `${d.last_value ?? "—"}${d.unit ? " " + d.unit : ""}`;
+      : `${/^\s*-?\d+([.,]\d+)?\s*$/.test(String(d.last_value ?? ""))
+           ? fmtNum(num) : d.last_value ?? "—"}${d.unit ? " " + d.unit : ""}`;
     c.innerHTML = iconHtml +
       `<div class="value ${dim ? "off" : ""}">${valueHtml}</div>
        <div class="name">${w.options.label || d.name || "?"}</div>` +

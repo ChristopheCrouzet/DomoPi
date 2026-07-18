@@ -109,6 +109,23 @@ Tout se fait dans **Paramètres** (bandeau supérieur, compte admin).
   hauteur de la position sur l'échelle, superposée à l'icône « off »). Une
   échelle peut aussi remplacer la bascule marche/arrêt du clic court par
   l'ouverture directe du réglage (utile pour les consignes).
+- **Capteurs virtuels** : capteurs **calculés par formule** à partir des autres
+  capteurs (onglet Périphériques, section « Capteurs virtuels »). Une formule
+  combine constantes, opérateurs `+ - * /`, parenthèses, références
+  `{Nom du capteur}` et fonctions : `Deriver({compteur}, 1h)` (dérivée par
+  heure — ex. puissance kW depuis un compteur d'énergie kWh, durée de 6min à
+  24h) et `Min` / `Max` / `Moy` (`{capteur}`, plage glissante en h/min, ou
+  `heure` / `jour` courants, ou `hier` — journée d'hier complète). Exemple :
+  `Deriver({Compteur EDF}, 1h) - {Départ Chauffage} - {Départ Cumulus}`.
+  L'éditeur (bouton `…`) valide la formule en direct et liste fonctions et
+  capteurs insérables d'un clic. La valeur est recalculée et historisée à
+  chaque cycle de collecte (graphes compris) ; un calcul impossible (division
+  par zéro…) affiche *invalide* sur la tuile et laisse un trou dans le graphe.
+  Un capteur virtuel **sans formule** est un état **réglable à la main** :
+  marqué pilotable (avec échelle, icônes et unité au besoin), il se règle
+  depuis sa tuile comme une sortie et sa valeur est historisée s'il est
+  surveillé — pratique pour une consigne ou un mode purement logiciel,
+  utilisable ensuite dans les formules d'autres capteurs virtuels.
 - **Comptes** : un administrateur, plus des comptes « lecteur » (consultation et
   pilotage des sorties autorisées, sans accès aux réglages).
 
