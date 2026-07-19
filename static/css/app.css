@@ -144,8 +144,17 @@ input[type=range] { accent-color: var(--amber); }
 /* ---------------- graphes ---------------- */
 .chart-box { background: color-mix(in srgb, var(--panel) 92%, transparent);
   border: 1px solid var(--line); border-radius: 10px; padding: .6rem; }
-.chart-head { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-.chart-head .title { font-size: .9rem; flex: 1; }
+/* Deux cellules côte à côte : titre + valeur à gauche (1 ou 2 lignes), boutons
+   de plage à droite (repliés sur 1 ou 2 lignes, alignés à droite) — les boutons
+   ne passent jamais sous le titre, la hauteur reste minimale sur mobile. */
+.chart-head { display: flex; align-items: center; gap: .4rem; }
+.chart-head .title { font-size: .9rem; flex: 1 1 auto; min-width: 0;
+  /* 2 lignes maxi, ellipse au-delà : le titre ne pousse jamais l'en-tête
+     à 3 lignes */
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; }
+.chart-head .ranges { display: flex; flex-wrap: wrap; gap: .3rem;
+  justify-content: flex-end; margin-left: auto; flex: 0 1 auto; }
 .chart-head button { background: var(--panel-2); border: 1px solid var(--line);
   color: var(--txt); border-radius: 6px; padding: .15rem .5rem; cursor: pointer; font-size: .78rem; }
 .chart-head button.active { border-color: var(--copper); color: var(--amber); }
@@ -322,6 +331,9 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
     border-top: 1px solid var(--line);
     background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
   #banner #root-nav:empty { display: none; }
+  /* Boutons de plage des graphes : ~10 % de moins en largeur et hauteur pour
+     tenir sur 2 lignes maxi face au titre. */
+  .chart-head button { padding: .12rem .42rem; font-size: .7rem; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .card { transition: border-color .15s, transform .15s; }

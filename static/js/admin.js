@@ -26,6 +26,93 @@
   }
 
   /* ============================================ réglages */
+  /* Durées des graphes ([{label, span_s, mode}]) — mêmes défauts que le serveur
+     (db.py:DEFAULT_SETTINGS) et le visualiseur (app.js). */
+  const DEFAULT_RANGES = [
+    { label: "24 h", span_s: 86400, mode: "raw" },
+    { label: "4 j", span_s: 345600, mode: "raw" },
+    { label: "15 j", span_s: 1296000, mode: "minmax" },
+    { label: "30 j", span_s: 2592000, mode: "minmax" },
+    { label: "90 j", span_s: 7776000, mode: "minmax" },
+    { label: "6 mois", span_s: 15724800, mode: "minmax" }];
+  let chartRanges = DEFAULT_RANGES;
+
+  const fmtSpan = s => s % 86400 === 0
+    ? (s / 86400) + " jour" + (s / 86400 > 1 ? "s" : "")
+    : (s / 3600) + " heure" + (s / 3600 > 1 ? "s" : "");
+
+  /* Enregistre immédiatement (comme les échelles) : le serveur valide,
+     normalise et trie par durée croissante. */
+  async function saveRanges(next) {
+    next = next.slice().sort((a, b) => a.span_s - b.span_s);
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({
+      chart_ranges: JSON.stringify(next) }) });
+    chartRanges = next;
+    renderRanges();
+  }
+
+  function renderRanges() {
+    const box = $("#ranges-list");
+    box.innerHTML = "";
+    chartRanges.forEach((r, i) => {
+      const div = document.createElement("div");
+      div.className = "card"; div.style.marginBottom = ".5rem"; div.style.minHeight = "0";
+      div.innerHTML = `<div class="row">
+        <div><b>${esc(r.label)}</b> <span class="muted">— ${fmtSpan(r.span_s)} ·
+          ${r.mode === "raw" ? "toute la courbe" : "min / moy / max"}</span></div>
+        <div class="fix"><button class="btn sm" data-a="edit">Modifier</button></div>
+        <div class="fix"><button class="btn sm danger" data-a="del">Supprimer</button></div></div>`;
+      div.querySelector("[data-a=edit]").onclick = () => rangeForm(r, i);
+      div.querySelector("[data-a=del]").onclick = async () => {
+        if (chartRanges.length <= 1) return toast("Conserver au moins une durée de graphe");
+        if (!confirm(`Supprimer la durée « ${r.label} » ?`)) return;
+        try { await saveRanges(chartRanges.filter((_, j) => j !== i)); }
+        catch (e) { return toast(e.message); }
+        toast("Durée supprimée");
+      };
+      box.appendChild(div);
+    });
+  }
+
+  function rangeForm(r, idx) {
+    const days = r.span_s % 86400 === 0;
+    dialog(`<h2 style="margin-top:0">${idx != null ? "Modifier la durée" : "Nouvelle durée"}</h2>
+      <label>Libellé du bouton (vide = automatique)</label>
+      <input id="rg-label" type="text" maxlength="12" placeholder="ex. 15 j"
+             value="${esc(r.label || "")}">
+      <div class="row">
+        <div><label>Durée</label><input id="rg-dur" type="number" min="1"
+          value="${r.span_s / (days ? 86400 : 3600)}"></div>
+        <div><label>Unité</label><select id="rg-unit">
+          <option value="3600" ${days ? "" : "selected"}>heures</option>
+          <option value="86400" ${days ? "selected" : ""}>jours</option></select></div>
+      </div>
+      <label>Affichage</label><select id="rg-mode">
+        <option value="raw" ${r.mode === "raw" ? "selected" : ""}>Toute la courbe (mesures brutes)</option>
+        <option value="minmax" ${r.mode !== "raw" ? "selected" : ""}>Min / Moy / Max (agrégé)</option></select>
+      <div class="row" style="margin-top:1rem">
+        <button class="btn primary" id="rg-save">Enregistrer</button>
+        <button class="btn" id="rg-cancel">Annuler</button></div>`, dlg => {
+      dlg.querySelector("#rg-cancel").onclick = () => dlg.close();
+      dlg.querySelector("#rg-save").onclick = async () => {
+        const n = parseInt(dlg.querySelector("#rg-dur").value, 10);
+        const unit = +dlg.querySelector("#rg-unit").value;
+        if (!(n > 0)) return toast("Durée invalide");
+        const label = dlg.querySelector("#rg-label").value.trim()
+          || n + (unit === 86400 ? " j" : " h");
+        const item = { label, span_s: n * unit,
+                       mode: dlg.querySelector("#rg-mode").value };
+        const next = chartRanges.slice();
+        if (idx != null) next[idx] = item; else next.push(item);
+        try { await saveRanges(next); } catch (e) { return toast(e.message); }
+        dlg.close();
+        toast("Réglages des courbes enregistrés");
+      };
+    });
+  }
+
+  $("#range-add").onclick = () => rangeForm({ label: "", span_s: 86400, mode: "minmax" }, null);
+
   async function loadSettings() {
     const s = await api("/api/settings");
     $("#s-title").value = s.site_title || "";
@@ -37,6 +124,11 @@
     // ?? et non || : « Aucun » est la chaîne vide, valeur légitime
     $("#s-thou").value = s.display_thousands_sep ?? " ";
     $("#s-dec").value = s.display_decimal_sep || ",";
+    try {
+      const cr = JSON.parse(s.chart_ranges);
+      if (Array.isArray(cr) && cr.length) chartRanges = cr;
+    } catch { /* réglage absent (base antérieure) : défauts */ }
+    renderRanges();
   }
   $("#s-save").onclick = async () => {
     await api("/api/settings", { method: "PUT", body: JSON.stringify({
@@ -900,8 +992,7 @@
           de sous-pages de la même page.">Ordre (petit = en haut)</label>
           <input id="wf-order" type="number" value="${w.sort_order || 0}"></div>
         <div id="wf-range"><label>Fenêtre par défaut du graphe</label><select id="wf-rangev">
-          ${[["86400", "24 h"], ["345600", "4 jours"], ["1296000", "15 jours"], ["2592000", "30 jours"]]
-            .map(([v, l]) => `<option value="${v}" ${String(w.options.range_s || 86400) === v ? "selected" : ""}>${l}</option>`).join("")}
+          ${chartRanges.map(r => `<option value="${r.span_s}" ${String(w.options.range_s || 86400) === String(r.span_s) ? "selected" : ""}>${esc(r.label)}</option>`).join("")}
         </select></div>
       </div>
       <div class="row" style="margin-top:1rem">

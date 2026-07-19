@@ -82,11 +82,38 @@ async def me(request: Request):
 # ================================================================ paramètres
 SETTABLE = {"poll_interval_s", "raw_retention_days", "journal_level",
             "journal_retention_days", "site_title",
-            "display_sig_digits", "display_thousands_sep", "display_decimal_sep"}
+            "display_sig_digits", "display_thousands_sep", "display_decimal_sep",
+            "chart_ranges"}
 
 # Réglages d'affichage exposés aux lecteurs (le visualiseur formate les valeurs
 # des tuiles avec, sans avoir accès aux réglages complets réservés à l'admin).
-DISPLAY_KEYS = ("display_sig_digits", "display_thousands_sep", "display_decimal_sep")
+DISPLAY_KEYS = ("display_sig_digits", "display_thousands_sep",
+                "display_decimal_sep", "chart_ranges")
+
+
+def _check_chart_ranges(value: str) -> str:
+    """Valide et normalise le réglage chart_ranges (JSON [{label, span_s, mode}]).
+
+    Renvoie la forme canonique triée par durée croissante ; 400 si invalide.
+    """
+    try:
+        lst = json.loads(value)
+        assert isinstance(lst, list) and 1 <= len(lst) <= 8
+        out = []
+        for r in lst:
+            label = str(r["label"]).strip()
+            span = int(r["span_s"])
+            mode = r["mode"]
+            assert label and len(label) <= 12
+            assert 3600 <= span <= 366 * 86400
+            assert mode in ("raw", "minmax")
+            out.append({"label": label, "span_s": span, "mode": mode})
+        out.sort(key=lambda r: r["span_s"])
+        return json.dumps(out, ensure_ascii=False)
+    except (AssertionError, KeyError, TypeError, ValueError):
+        raise HTTPException(400, "Paramétrage des courbes invalide : chaque durée "
+                            "doit avoir un libellé (12 caractères max), une durée "
+                            "entre 1 heure et 1 an et un mode d'affichage.")
 
 
 @app.get("/api/display")
@@ -108,6 +135,8 @@ async def put_settings(request: Request):
     body = await request.json()
     for k, v in body.items():
         if k in SETTABLE:
+            if k == "chart_ranges":
+                v = _check_chart_ranges(str(v))
             db.set_setting(k, str(v))
     journal.info("settings", f"paramètres modifiés : {', '.join(body)}")
     return {"ok": True}
@@ -597,11 +626,14 @@ async def refresh_devices(request: Request):
 
 # ================================================================ séries
 @app.get("/api/series/{did}")
-async def series(did: int, request: Request, t_from: int, t_to: int):
+async def series(did: int, request: Request, t_from: int, t_to: int,
+                 mode: str = "auto"):
     auth.require_user(request)
     if t_to <= t_from:
         raise HTTPException(400, "Fenêtre temporelle invalide")
-    return db.query_series(did, t_from, t_to)
+    if mode not in ("auto", "raw", "minmax"):
+        raise HTTPException(400, "Mode d'affichage invalide")
+    return db.query_series(did, t_from, t_to, mode)
 
 
 # ================================================================ pages/widgets

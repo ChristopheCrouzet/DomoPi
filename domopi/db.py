@@ -136,6 +136,15 @@ DEFAULT_SETTINGS = {
     "display_sig_digits": "5",       # chiffres significatifs des valeurs affichées
     "display_thousands_sep": " ",    # séparateur de milliers ("" = aucun)
     "display_decimal_sep": ",",
+    # Durées proposées sous les graphes : [{label, span_s, mode}], mode "raw"
+    # (toute la courbe au pas de collecte) ou "minmax" (agrégat min/moy/max).
+    "chart_ranges": (
+        '[{"label": "24 h", "span_s": 86400, "mode": "raw"}, '
+        '{"label": "4 j", "span_s": 345600, "mode": "raw"}, '
+        '{"label": "15 j", "span_s": 1296000, "mode": "minmax"}, '
+        '{"label": "30 j", "span_s": 2592000, "mode": "minmax"}, '
+        '{"label": "90 j", "span_s": 7776000, "mode": "minmax"}, '
+        '{"label": "6 mois", "span_s": 15724800, "mode": "minmax"}]'),
 }
 
 
@@ -220,17 +229,20 @@ def store_measure(device_id: int, ts: int, value: float):
     conn.commit()
 
 
-def query_series(device_id: int, t_from: int, t_to: int) -> dict:
+def query_series(device_id: int, t_from: int, t_to: int, mode: str = "auto") -> dict:
     """Retourne la série adaptée à la fenêtre demandée.
 
+    mode "auto" (comportement historique, choix selon l'amplitude) :
     - fenêtre <= 4 jours  : points bruts (une courbe)
     - fenêtre  > 4 jours  : agrégat horaire min/moy/max (3 courbes)
     - fenêtre >= 15 jours : agrégat journalier min/moy/max (3 courbes)
+    mode "raw"    : force les points bruts (limités à la rétention du brut).
+    mode "minmax" : force l'agrégat (journalier si >= 15 j, sinon horaire).
     Les données au-delà de la rétention brute proviennent de measures_daily.
     """
     span = t_to - t_from
     conn = get_conn()
-    if span <= 4 * 86400:
+    if mode == "raw" or (mode != "minmax" and span <= 4 * 86400):
         rows = conn.execute(
             "SELECT ts, value FROM measures WHERE device_id=? AND ts BETWEEN ? AND ? ORDER BY ts",
             (device_id, t_from, t_to)).fetchall()

@@ -156,7 +156,7 @@
     <div><label for="s-title">Titre du site</label><input id="s-title" type="text"></div>
     <div><label for="s-interval">Intervalle de collecte (secondes)</label>
       <input id="s-interval" type="number" min="30" step="30"></div>
-    <div><label for="s-retention">Rétention du brut (jours)</label>
+    <div><label for="s-retention" title="Historique conservé au pas de collecte (mesures brutes). Au-delà, les mesures sont agrégées en min/moy/max journaliers (archives).">Rétention du brut (jours)</label>
       <input id="s-retention" type="number" min="7"></div>
   </div>
   <div class="row">
@@ -186,8 +186,20 @@
         <option value=",">Virgule</option>
         <option value=".">Point</option>
       </select></div>
+  </div>
+  <div class="row" style="margin-top:.6rem">
     <div class="fix"><button class="btn primary" id="s-save">Enregistrer les réglages</button></div>
   </div>
+
+  <h3>Paramétrage des courbes</h3>
+  <p class="muted">Durées proposées sous chaque graphe (boutons, triés par durée
+     croissante — modifications enregistrées immédiatement).
+     « Toute la courbe » trace chaque mesure au pas de collecte —
+     limité à la rétention du brut, à réserver aux durées courtes.
+     « Min / Moy / Max » agrège par heure (moins de 15 jours) ou par jour, et
+     puise dans les archives journalières au-delà de la rétention du brut.</p>
+  <div id="ranges-list"></div>
+  <button class="btn" id="range-add" style="margin-top:.6rem">+ Nouvelle durée</button>
 
   <h2>Contrôleurs domotiques</h2>
   <div id="conn-list"></div>

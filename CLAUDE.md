@@ -139,9 +139,10 @@ Tables : `users`, `settings`, `connectors`, `scales` (échelles de pilotage),
 `journal`. `measures` et
 `measures_daily` sont en `WITHOUT ROWID` (clé composite device+temps).
 
-### Logique d'agrégation — `query_series(device_id, t_from, t_to)`
+### Logique d'agrégation — `query_series(device_id, t_from, t_to, mode)`
 
-C'est le cœur métier, à préserver. Selon l'amplitude de la fenêtre demandée :
+C'est le cœur métier, à préserver. En `mode="auto"` (historique), selon
+l'amplitude de la fenêtre demandée :
 
 - **≤ 4 jours** → points bruts, `mode="raw"` (une seule courbe côté client).
 - **> 4 jours** → agrégation `GROUP BY` au pas **horaire**, `mode="hourly"`,
@@ -150,8 +151,23 @@ C'est le cœur métier, à préserver. Selon l'amplitude de la fenêtre demandé
   par les archives `measures_daily` pour les données au-delà de la rétention
   brute.
 
-Les seuils (4 j, 15 j) sont en dur dans `query_series`. `charts.js` s'adapte au
-champ `mode` renvoyé (courbe simple vs bande min-max + 3 lignes).
+Le paramètre `mode` de `/api/series/{id}` (`auto` | `raw` | `minmax`) permet de
+forcer le rendu : `raw` = points bruts quelle que soit la fenêtre (donc limité
+à la rétention du brut), `minmax` = agrégat (journalier si ≥ 15 j, sinon
+horaire). `charts.js` s'adapte au champ `mode` renvoyé (courbe simple vs bande
+min-max + 3 lignes).
+
+Les **durées proposées sous les graphes** sont configurables : réglage
+`chart_ranges` (JSON `[{label, span_s, mode}]`, mode `raw`/`minmax`, validé et
+trié par `main.py:_check_chart_ranges`, 1 à 8 entrées), édité dans l'admin
+(« Réglages généraux » → « Paramétrage des courbes » — cartes + dialogue sur le
+modèle des échelles, enregistrement immédiat, hors du bouton « Enregistrer les
+réglages » qui couvre le reste de la rubrique) et exposé aux lecteurs
+via `/api/display`. Les défauts (24 h et 4 j bruts, 15/30/90 j et 6 mois en
+min/moy/max) sont dupliqués dans `db.py:DEFAULT_SETTINGS`, `app.js` et
+`admin.js` (`DEFAULT_RANGES`) — garder les trois cohérents. La « Fenêtre par
+défaut du graphe » d'un widget mémorise `range_s` : si cette durée disparaît
+du réglage, le graphe retombe sur le premier bouton.
 
 ### Rétention — `rollup_and_purge()` et `purge_journal()`
 
@@ -410,6 +426,10 @@ Le « double rendu » d'une page filtre les widgets par `layout`
   les graphes gardent leur hauteur propre. Mobile : **3 colonnes
   fixes** (`repeat(3, 1fr)`) — 4 colonnes étaient trop serrées sur iPhone 14
   en portrait, et 3 colonnes restent garanties dès 320 px de large.
+- **En-tête des graphes** : deux cellules côte à côte — titre + valeur à
+  gauche (1 ou 2 lignes), boutons de plage dans `.chart-head .ranges` à droite
+  (alignés à droite, repliables sur 2 lignes) : les boutons ne passent jamais
+  sous le titre, pour ne pas réduire la hauteur du graphe sur mobile.
 - **Niveau visuel de consigne** : tuile pilotable dont l'échelle affiche la
   barre → classe `.lvl` + variable `--lvl` (position min→max en %) : la tuile
   s'éclaircit depuis le bas (dégradé blanc ~10 % d'opacité). Rien pour les

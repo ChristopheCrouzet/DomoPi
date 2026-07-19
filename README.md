@@ -86,9 +86,13 @@ Tout se fait dans **Paramètres** (bandeau supérieur, compte admin).
   paramétrable (couleur ou image), et une option « double rendu » pour définir
   des widgets différents sur smartphone et sur PC. On y pose des widgets :
   périphérique (icône + valeur), graphe, lien vers une autre page, ou texte.
-- **Graphes** : boutons de période (24 h, 4 j, 15 j, 30 j, 90 j).
-  Jusqu'à 4 jours, une courbe simple au pas de 5 min ; au-delà, trois courbes
-  **min / moyenne / max** (pas horaire, puis journalier à partir de 15 jours).
+- **Graphes** : boutons de période configurables (par défaut 24 h, 4 j, 15 j,
+  30 j, 90 j et 6 mois) dans Paramètres → Réglages généraux → **« Paramétrage
+  des courbes »** : pour chaque durée, libellé du bouton et affichage au choix —
+  **« Toute la courbe »** (chaque mesure au pas de collecte, limité à la
+  rétention du brut) ou **« Min / Moy / Max »** (trois courbes, pas horaire
+  sous 15 jours puis journalier, en puisant dans les archives au-delà de la
+  rétention du brut).
 - **Journal** : bouton dans le bandeau. Verbosité réglable dans Paramètres :
   *verbeux* (chaque changement), *moyen* (actions + warnings + erreurs),
   *erreurs* (absences de réponse et erreurs seules). Purge automatique

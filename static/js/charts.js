@@ -1,5 +1,5 @@
 /* DomoPi charts — rendu SVG sans dépendance.
-   Mode "raw"   : une courbe (pas 5 min).
+   Mode "raw"   : une courbe (mesures brutes, pas = intervalle de collecte).
    Mode "hourly"/"daily" : courbe moyenne + bande min-max (3 courbes). */
 (function () {
   const NS = "http://www.w3.org/2000/svg";
@@ -196,7 +196,7 @@
          <span><i style="background:#4f9de0"></i>min</span>
          <span class="muted">${data.mode === "daily" ? "pas journalier" : "pas horaire"}${opts.unit ? " · " + opts.unit : ""}</span>`
       : `<span><i style="background:#e8a13c"></i>valeur</span>
-         <span class="muted">pas 5 min${opts.unit ? " · " + opts.unit : ""}</span>`;
+         <span class="muted">mesures brutes${opts.unit ? " · " + opts.unit : ""}</span>`;
     container.appendChild(legend);
   };
 })();

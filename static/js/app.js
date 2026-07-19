@@ -63,6 +63,10 @@
     disp = { sig: Math.max(3, parseInt(dp.display_sig_digits, 10) || 5),
              thou: dp.display_thousands_sep ?? " ",
              dec: dp.display_decimal_sep || "," };
+    try {
+      const cr = JSON.parse(dp.chart_ranges);
+      if (Array.isArray(cr) && cr.length) chartRanges = cr;
+    } catch { /* réglage absent : défauts */ }
     buildRootNav();
   }
   async function refreshValues() {
@@ -467,8 +471,20 @@
   }
 
   /* ------------------------------------------------ widget graphe */
-  const RANGES = [["24 h", 86400], ["4 j", 4 * 86400], ["15 j", 15 * 86400],
-                  ["30 j", 30 * 86400], ["90 j", 90 * 86400]];
+  /* Durées des graphes, configurables dans l'admin (« Paramétrage des
+     courbes ») et servies par /api/display ; repli sur les mêmes défauts que
+     le serveur (db.py:DEFAULT_SETTINGS). mode "raw" = toute la courbe au pas
+     de collecte, "minmax" = agrégat min/moy/max horaire ou journalier. */
+  const DEFAULT_RANGES = [
+    { label: "24 h", span_s: 86400, mode: "raw" },
+    { label: "4 j", span_s: 345600, mode: "raw" },
+    { label: "15 j", span_s: 1296000, mode: "minmax" },
+    { label: "30 j", span_s: 2592000, mode: "minmax" },
+    { label: "90 j", span_s: 7776000, mode: "minmax" },
+    { label: "6 mois", span_s: 15724800, mode: "minmax" }];
+  let chartRanges = DEFAULT_RANGES;
+  const rangeMode = span =>
+    (chartRanges.find(r => +r.span_s === span) || {}).mode || "auto";
 
   /* Retourne {box, ready} : ready résout une fois les données de la plage
      initiale chargées — permet à l'appelant (renderPage) d'attendre tous les
@@ -483,6 +499,12 @@
     head.className = "chart-head";
     head.innerHTML = `<span class="title">${w.options.label || d.name || ""}
       <span class="muted mono" style="font-family:var(--mono)">${d.last_value ?? ""}${d.unit ? " " + d.unit : ""}</span></span>`;
+    // Cellule dédiée aux boutons de plage : ils se replient dedans, alignés à
+    // droite, face au titre (lui-même sur 1 ou 2 lignes) — au lieu de passer
+    // sous le titre et de manger la hauteur du graphe sur mobile.
+    const ranges = document.createElement("span");
+    ranges.className = "ranges";
+    head.appendChild(ranges);
     const plot = document.createElement("div");
     const def = presetSpan || w.options.range_s || 86400;
     const load = async (span, btn) => {
@@ -490,21 +512,24 @@
       btn.classList.add("active");
       const now = Math.floor(Date.now() / 1000);
       try {
-        const data = await api(`/api/series/${d.id}?t_from=${now - span}&t_to=${now}`);
+        const data = await api(`/api/series/${d.id}?t_from=${now - span}&t_to=${now}` +
+                               `&mode=${rangeMode(span)}`);
         renderChart(plot, data, { unit: d.unit, height: isMobile() ? 200 : 260 });
       } catch (e) { plot.innerHTML = `<p class="muted">${e.message}</p>`; }
     };
     let activeBtn = null;
-    for (const [lbl, span] of RANGES) {
+    for (const r of chartRanges) {
       const b = document.createElement("button");
-      b.textContent = lbl;
-      b.dataset.span = span;
-      if (span === def) activeBtn = b;
-      b.onclick = () => load(span, b);
-      head.appendChild(b);
+      b.textContent = r.label;
+      b.dataset.span = r.span_s;
+      if (+r.span_s === def) activeBtn = b;
+      b.onclick = () => load(+r.span_s, b);
+      ranges.appendChild(b);
     }
+    // Fenêtre mémorisée/du widget absente des durées paramétrées : 1er bouton.
+    if (!activeBtn) activeBtn = head.querySelector("button");
     box.appendChild(head); box.appendChild(plot);
-    return { box, ready: load(def, activeBtn || head.querySelector("button")) };
+    return { box, ready: load(+activeBtn.dataset.span, activeBtn) };
   }
 
   function openZoom(d) {

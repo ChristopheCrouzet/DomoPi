@@ -69,13 +69,26 @@ if [ ! -f "$CONF_DIR/domopi.env" ]; then
         [ ${#ADMIN_PASS} -ge 8 ] && break
         echo "  Le mot de passe doit faire au moins 8 caractères."
     done
+    echo "  Clé API Anthropic (console.anthropic.com) pour le bouton « Générer"
+    echo "  par IA » de l'onglet Icônes — optionnel, Entrée pour passer."
+    read -rp "  ANTHROPIC_API_KEY : " ANTHROPIC_KEY
     cat > "$CONF_DIR/domopi.env" << EOF
 DOMOPI_ADMIN_USER=$ADMIN_USER
 DOMOPI_ADMIN_PASSWORD=$ADMIN_PASS
 EOF
+    if [ -n "${ANTHROPIC_KEY:-}" ]; then
+        echo "ANTHROPIC_API_KEY=$ANTHROPIC_KEY" >> "$CONF_DIR/domopi.env"
+    else
+        echo "# ANTHROPIC_API_KEY=sk-ant-...  # génération d'icônes par IA (optionnel)" \
+            >> "$CONF_DIR/domopi.env"
+    fi
     chmod 600 "$CONF_DIR/domopi.env"
 else
     msg "Compte admin déjà configuré ($CONF_DIR/domopi.env), conservé."
+    # Mise à niveau : signaler la clé optionnelle d'icônes IA si absente.
+    grep -q ANTHROPIC_API_KEY "$CONF_DIR/domopi.env" || \
+        echo "# ANTHROPIC_API_KEY=sk-ant-...  # génération d'icônes par IA (optionnel)" \
+            >> "$CONF_DIR/domopi.env"
 fi
 
 # ---------------------------------------------------------------- MQTT
