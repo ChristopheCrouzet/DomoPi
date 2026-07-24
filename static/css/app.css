@@ -161,9 +161,21 @@ input[type=range] { accent-color: var(--amber); }
 .chart-svg { width: 100%; height: auto; display: block;
   /* Sans ça, un glissé tactile est capté par le défilement de page avant
      que le navigateur ne livre les pointermove au curseur de survol. */
-  touch-action: none; }
-.legend { display: flex; gap: .9rem; font-size: .75rem; color: var(--muted); padding: .2rem .4rem; }
+  touch-action: none;
+  /* Le rectangle de zoom se trace au clic maintenu : pas de sélection de
+     texte parasite pendant le glissé. */
+  -webkit-user-select: none; user-select: none; }
+.legend { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .9rem;
+  font-size: .75rem; color: var(--muted); padding: .2rem .4rem; }
 .legend i { display: inline-block; width: 10px; height: 3px; margin-right: 4px; vertical-align: middle; }
+/* Commandes de zoom : apparaissent (hidden retiré par charts.js) dès qu'une
+   vue est empilée, alignées à droite de la légende. */
+.legend .zoom-ctl { display: flex; gap: .3rem; margin-left: auto; flex: 0 0 auto; }
+.legend .zoom-ctl[hidden] { display: none; }
+.legend .zoom-ctl button { background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--txt); border-radius: 6px; padding: .1rem .45rem;
+  cursor: pointer; font-size: .72rem; white-space: nowrap; }
+.legend .zoom-ctl button:hover { border-color: var(--copper); color: var(--amber); }
 
 /* ---------------- formulaires ---------------- */
 label { display: block; font-size: .82rem; color: var(--muted); margin: .5rem 0 .15rem; }

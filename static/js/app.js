@@ -103,15 +103,16 @@
   async function renderPage(id, soft) {
     const main = $("#main");
     // Une MAJ "soft" (cycle 60 s) recrée tout le DOM de la page : on
-    // mémorise ici le choix de plage (1J/4J/15J) de chaque graphe et le
-    // défilement de la page pour les restaurer après coup, sinon l'utilisateur
-    // les perd à chaque rafraîchissement périodique.
-    const prevRanges = new Map();
+    // mémorise ici le choix de plage (1J/4J/15J) et le zoom de chaque graphe,
+    // ainsi que le défilement de la page, pour les restaurer après coup —
+    // sinon l'utilisateur les perd à chaque rafraîchissement périodique.
+    const prevRanges = new Map(), prevZooms = new Map();
     let prevScrollY = null;
     if (soft) {
       main.querySelectorAll(".chart-box[data-wid]").forEach(box => {
         const btn = box.querySelector(".chart-head button.active");
         if (btn) prevRanges.set(box.dataset.wid, +btn.dataset.span);
+        if (box._zoom) prevZooms.set(box.dataset.wid, box._zoom);
       });
       prevScrollY = window.scrollY;
     }
@@ -173,7 +174,8 @@
         c.innerHTML = `<div class="name" style="text-align:left;font-size:.95rem;color:var(--txt)">${w.options.text || ""}</div>`;
         grid.appendChild(c);
       } else if (w.wtype === "graph" && w.device_id) {
-        const gw = graphWidget(w, prevRanges.get(String(w.id)));
+        const gw = graphWidget(w, prevRanges.get(String(w.id)),
+                               prevZooms.get(String(w.id)));
         grid.appendChild(gw.box);
         graphReady.push(gw.ready);
       } else if (w.device_id)
@@ -490,11 +492,14 @@
      initiale chargées — permet à l'appelant (renderPage) d'attendre tous les
      graphes d'une page avant de les afficher, pour éviter un DOM "vide" qui
      s'effondre puis se remplit graphe par graphe. */
-  function graphWidget(w, presetSpan) {
+  function graphWidget(w, presetSpan, presetZoom) {
     const d = devices[w.device_id] || {};
     const box = document.createElement("div");
     box.className = "chart-box wide";
     if (w.id != null) box.dataset.wid = w.id;
+    // Zoom en cours (voir charts.js) : porté par la boîte pour que la MAJ
+    // "soft" le retrouve et le repose sur le graphe reconstruit.
+    box._zoom = presetZoom || null;
     const head = document.createElement("div");
     head.className = "chart-head";
     head.innerHTML = `<span class="title">${w.options.label || d.name || ""}
@@ -507,14 +512,16 @@
     head.appendChild(ranges);
     const plot = document.createElement("div");
     const def = presetSpan || w.options.range_s || 86400;
-    const load = async (span, btn) => {
+    const load = async (span, btn, keepZoom) => {
       head.querySelectorAll("button").forEach(x => x.classList.remove("active"));
       btn.classList.add("active");
+      if (!keepZoom) box._zoom = null;      // changer de plage annule le zoom
       const now = Math.floor(Date.now() / 1000);
       try {
         const data = await api(`/api/series/${d.id}?t_from=${now - span}&t_to=${now}` +
                                `&mode=${rangeMode(span)}`);
-        renderChart(plot, data, { unit: d.unit, height: isMobile() ? 200 : 260 });
+        renderChart(plot, data, { unit: d.unit, height: isMobile() ? 200 : 260,
+                                  view: box._zoom, onZoom: v => { box._zoom = v; } });
       } catch (e) { plot.innerHTML = `<p class="muted">${e.message}</p>`; }
     };
     let activeBtn = null;
@@ -529,7 +536,7 @@
     // Fenêtre mémorisée/du widget absente des durées paramétrées : 1er bouton.
     if (!activeBtn) activeBtn = head.querySelector("button");
     box.appendChild(head); box.appendChild(plot);
-    return { box, ready: load(+activeBtn.dataset.span, activeBtn) };
+    return { box, ready: load(+activeBtn.dataset.span, activeBtn, true) };
   }
 
   function openZoom(d) {

@@ -93,6 +93,16 @@ Tout se fait dans **Paramètres** (bandeau supérieur, compte admin).
   rétention du brut) ou **« Min / Moy / Max »** (trois courbes, pas horaire
   sous 15 jours puis journalier, en puisant dans les archives au-delà de la
   rétention du brut).
+- **Zoom sur un graphe** : à la souris, un clic maintenu puis glissé dessine un
+  rectangle de zoom (un axe n'est retenu que si le glissé dépasse ~6 px dessus —
+  un glissé horizontal zoome donc le temps seul) ; au doigt, deux doigts qu'on
+  écarte zooment, qu'on rapproche dézooment (axe par axe, selon l'écartement
+  en largeur et en hauteur), et la courbe suit les doigts — deux doigts
+  déplacés sans les écarter font glisser la fenêtre. Deux boutons
+  apparaissent alors sous le graphe :
+  **« Zoom précédent »** (échelle d'avant la dernière action) et **« Zoom
+  initial »** (échelle d'origine). Le zoom ne fait que changer l'échelle des
+  points déjà affichés — changer de période le remet à zéro.
 - **Journal** : bouton dans le bandeau. Verbosité réglable dans Paramètres :
   *verbeux* (chaque changement), *moyen* (actions + warnings + erreurs),
   *erreurs* (absences de réponse et erreurs seules). Purge automatique

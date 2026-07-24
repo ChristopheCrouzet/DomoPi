@@ -430,6 +430,27 @@ Le « double rendu » d'une page filtre les widgets par `layout`
   gauche (1 ou 2 lignes), boutons de plage dans `.chart-head .ranges` à droite
   (alignés à droite, repliables sur 2 lignes) : les boutons ne passent jamais
   sous le titre, pour ne pas réduire la hauteur du graphe sur mobile.
+- **Zoom des graphes** (`charts.js`) : purement côté client — une *vue*
+  `{t0,t1,vmin,vmax}` sur les points déjà chargés, aucune requête refaite.
+  Souris : clic maintenu puis glissé > 6 px écran → rectangle de sélection ;
+  chaque axe n'est zoomé que si le glissé le dépasse **sur cet axe** (glissé
+  horizontal = temps seul, l'axe non retenu s'affiche pleine hauteur/largeur
+  dans le rectangle). Tactile : pincement à deux doigts, facteur calculé
+  séparément sur l'écartement en X et en Y (seuil `PINCH_MIN`), borné à la vue
+  complète (on ne dézoome pas au-delà des données ; pincement refermé =
+  retour à l'origine). Le geste **décale aussi** la vue : la donnée visée au
+  départ par le milieu des doigts reste sous le milieu **courant** des doigts
+  — sans quoi, deux doigts partant du même côté du cadre (où écarter revient
+  autant à translater) donnent un zoom qui ne suit pas la main. Corollaire
+  utile : à deux doigts sans écartement, on fait glisser la fenêtre (un axe
+  sous `PINCH_MIN` ne change pas d'échelle mais se décale quand même). Les vues s'empilent → boutons « Zoom précédent » /
+  « Zoom initial » dans la légende (`.zoom-ctl`, masqués sans zoom).
+  Les courbes et les pastilles du curseur sont découpées par un `clipPath`
+  sur le cadre ; l'étiquette du curseur reste lisible hors cadre.
+  `renderChart(container, data, {view, onZoom})` : `view` restaure un zoom,
+  `onZoom` le remonte à `app.js`, qui le porte sur `box._zoom` pour le
+  reposer après la MAJ « soft » de 60 s (comme le bouton de plage actif) —
+  changer de plage l'annule.
 - **Niveau visuel de consigne** : tuile pilotable dont l'échelle affiche la
   barre → classe `.lvl` + variable `--lvl` (position min→max en %) : la tuile
   s'éclaircit depuis le bas (dégradé blanc ~10 % d'opacité). Rien pour les
