@@ -84,8 +84,7 @@ pip install -r requirements.txt
 export DOMOPI_DB=/tmp/dev.db DOMOPI_SECRET=/tmp/dev.key \
        DOMOPI_STATIC=$PWD/static DOMOPI_ADMIN_PASSWORD=devpass123
 uvicorn domopi.main:app --reload --port 8000
-# http://127.0.0.1:8000  (le cookie est Secure : tester en HTTPS ou assouplir
-# temporairement le flag secure dans main.py:login pour du HTTP local)
+# http://127.0.0.1:8000   (admin / devpass123, admin sur /static/admin.html)
 ```
 
 Équivalent Windows (PowerShell), depuis `domopi setup\` :
@@ -97,6 +96,14 @@ $env:DOMOPI_DB = "$env:TEMP\dev.db"; $env:DOMOPI_SECRET = "$env:TEMP\dev.key"
 $env:DOMOPI_STATIC = "$PWD\static"; $env:DOMOPI_ADMIN_PASSWORD = "devpass123"
 uvicorn domopi.main:app --reload --port 8000
 ```
+
+Le cookie de session est posé avec `secure=True`, mais **Chrome l'accepte sur
+`127.0.0.1`** (origine réputée sûre — vérifié) : inutile de monter du HTTPS ou
+de retoucher le drapeau dans `main.py:login` pour travailler en local. Le
+piège ne concerne que les clients HTTP Python (voir « Tests »).
+
+Aucune étape de build côté frontend : recharger la page suffit. Pour lancer
+l'app **déjà peuplée** et prendre des captures en une commande, voir « Tests ».
 
 ## Déploiement de test sur le Pi (dev)
 
@@ -123,14 +130,98 @@ Ce circuit est réservé au développement ; l'installation propre reste
 
 ## Tests
 
-Il n'y a pas encore de suite de tests automatisés. Les vérifications faites à la
-génération : `bash -n install.sh`, imports des modules, smoke test des routes
-(login, settings, connectors, pages, icons), et validation de `query_series` sur
-20 jours de données simulées. Les échelles de pilotage ont été validées par des
-scripts smoke jetables (`fastapi.testclient` + base SQLite temporaire recréant
-l'état legacy : migrations, CRUD `/api/scales`, validations 400, affectations,
-capteurs pilotables) — c'est le bon modèle pour le premier chantier : en faire
-une vraie suite pytest.
+Il n'y a pas encore de suite pytest. En attendant, deux harnais **exécutés et
+vérifiés** tiennent ce rôle ; ils vivent dans le skill `/run-domopi`
+(`M:\Domotique\Domopi\.claude\skills\run-domopi\`, hors dépôt comme tout
+l'outillage Claude — cf. le `CLAUDE.md` racine) :
+
+| Fichier | Niveau | Rôle |
+|---|---|---|
+| `driver.py` | app complète | lance uvicorn sur une base jetable, peuple un jeu de démo, appelle l'API authentifiée, prend les captures Playwright |
+| `direct_example.py` | cœur métier | `query_series` et `formula` **sans serveur** (base SQLite temporaire + `fastapi.testclient`) — squelette de la future suite pytest |
+
+```powershell
+$py  = "M:\Domotique\Domopi\domopi setup\venv\Scripts\python.exe"
+$drv = "M:\Domotique\Domopi\.claude\skills\run-domopi\driver.py"
+& $py $drv smoke                  # enchaînement complet -> « SMOKE OK »
+& $py $drv reset                  # base vierge + relance
+& $py $drv seed                   # jeu de démo seul (ré-entrant)
+& $py $drv api GET /api/devices   # appel authentifié
+& $py $drv shots                  # 6 captures dans %TEMP%\domopi-dev\shots\
+& $py $drv mobile                 # rendu iPhone portrait : invariants mesurés
+```
+
+`smoke` couvre : connexion, 401 sans session, jeu de démo (30 j d'historique
+au pas de 5 min), lecture de toutes les routes de liste, les **trois régimes
+de `query_series`** (`raw` / `hourly` / `daily`), validation de formule (cas
+valide et invalide), `POST /set` + `refresh`, refus 400 d'une échelle
+invalide, puis les captures (visualiseur 1280×900 et 390×844, dialogue
+d'échelle ouvert, admin). Rien n'est écrit dans le dépôt : base, secret, log
+et captures vont dans `%TEMP%\domopi-dev\`, et le Pi n'est jamais touché.
+
+Le jeu de démo n'exige **aucune box** : tout repose sur des capteurs virtuels
+(température, index de consommation, une `Puissance` calculée par
+`Deriver(...)`, une consigne et un gradateur avec leurs échelles), une page
+« Maison », une sous-page « Étage » et une page racine « Garage » visée par un
+widget `pagelink`.
+
+`mobile` **mesure dans la page** les conventions d'interface fragiles, sur
+320×568 / 375×667 / 390×844 / 430×932 en portrait, côté visualiseur **et**
+admin : grille à exactement 3 colonnes sous 700 px, tuiles toutes à 122 px,
+`scrollWidth <= clientWidth` (aucun défilement horizontal), aucun élément
+débordant à droite, boutons de plage jamais sous le titre dans `.chart-head`,
+et position réelle des trois barres collantes de l'admin. À relancer après
+toute retouche de `app.css` ou de `app.js:renderPage`.
+
+Au 25/07/2026, le **visualiseur** passe les quatre largeurs (à 320 px la valeur
+perd son unité par ellipse, `16,81 …` — conséquence assumée des tuiles
+uniformes en `nowrap`). L'**admin**, lui, échoue sur les quatre largeurs :
+
+> Le tableau des périphériques n'a pas de conteneur à défilement horizontal.
+> Il se tasse à sa largeur mini (836 px) : la page entière défile
+> latéralement (bandeau et onglets compris) et seules ~4 colonnes sur 11 sont
+> visibles sur un iPhone 14 ; les libellés de colonne se replient, la ligne
+> d'en-tête passe de 29 px (bureau) à 67 px, et `#dev-filters top:113px`
+> retombe **dans** l'en-tête de tri en masquant les champs de filtre.
+> Attention : un simple `overflow-x: auto` autour du tableau casserait les
+> trois `position: sticky` (elles se référeraient à ce conteneur, qui ne
+> défile pas verticalement). La **liste de cartes en mobile a été prototypée
+> le 25/07/2026 puis écartée** : elle supprimait le débordement mais donnait
+> ~10 lignes par périphérique, défilement interminable sur un parc réel.
+> Piste restante : masquer les colonnes secondaires sous 700 px en gardant le
+> tableau et ses en-têtes collants.
+
+Le calage vertical, lui, tient : onglets à −1 px sous le bandeau, en-tête de
+tri à −6 px sous les onglets (recouvrement voulu, pas de jour).
+
+Piège de contenu : une sous-page produit **déjà** une tuile « dossier »
+(fusion des sous-pages et des widgets dans `app.js:renderPage`) — y ajouter un
+widget `pagelink` vers cette même sous-page affiche la tuile en double.
+
+### Pièges à connaître avant d'écrire un script de test
+
+- **Cookie `Secure`** : `httpx` et `fastapi.testclient` refusent de le renvoyer
+  sur `http://` — le login rend 200 et l'appel suivant 401. Poser l'en-tête à
+  la main, `c.headers["Cookie"] = f"domopi_session={r.cookies['domopi_session']}"`.
+  Surcharger `return_ok_secure` d'un `CookieJar` **ne suffit pas** (httpx garde
+  le jar, le cookie n'est pas envoyé pour autant).
+- **`db.DB_PATH` et `auth.SECRET_PATH` sont figés à l'import** du module, pas
+  relus à chaque appel : poser `DOMOPI_DB` / `DOMOPI_SECRET` **avant** tout
+  `import domopi.*`, sinon le script écrit dans les chemins de production.
+- **`PYTHONPATH`** : un script lancé depuis l'extérieur du projet ne trouve pas
+  le paquet `domopi` (`sys.path[0]` = dossier du script, pas le cwd).
+- **Verrou de fichier Windows** : ne pas supprimer la base serveur allumé —
+  `Remove-Item` échoue en silence et le `seed` suivant s'empile sur les
+  anciennes données (points en double, écarts `21 s / 279 s` au lieu de
+  `300 s`). Passer par `driver.py reset`, qui arrête le serveur d'abord.
+- Bruit attendu et sans gravité : `401` sur `/api/me` avant connexion et
+  `GET /favicon.ico → 404` (aucun favicon n'est servi).
+
+Vérifications faites à la génération du projet, à reprendre le jour où la
+suite pytest sera écrite : `bash -n install.sh`, imports des modules, smoke
+des routes (login, settings, connectors, pages, icons), `query_series` sur
+20 jours simulés, et — pour les échelles de pilotage — migrations, CRUD
+`/api/scales`, validations 400, affectations, capteurs pilotables.
 
 ## Base de données (db.py)
 
