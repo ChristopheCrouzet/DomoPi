@@ -14,6 +14,7 @@ import time
 from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import ClientDisconnect
 
 from . import backup, db, auth, formula, icon_ai, journal, poller
 from .connectors import REGISTRY
@@ -798,17 +799,25 @@ async def run_backup_now(request: Request):
 
 
 @app.post("/api/backups/upload")
-async def upload_backup(request: Request, file: UploadFile = File(...)):
-    """Dépose une archive venue du poste client dans le dossier de sauvegarde."""
+async def upload_backup(request: Request, name: str = ""):
+    """Dépose une archive venue du poste client dans le dossier de sauvegarde.
+
+    L'archive arrive en **corps brut** (le nom de fichier en paramètre `name`),
+    et non en multipart : avec `UploadFile`, FastAPI analyse et met en cache le
+    corps entier **avant** d'exécuter la fonction, donc avant le contrôle
+    d'accès — un appelant non authentifié pouvait faire écrire jusqu'à
+    MAX_UPLOAD_MB sur la carte SD avant de récolter son 401. Ici, on refuse
+    avant d'avoir lu un seul octet.
+    """
     auth.require_admin(request)
     try:
-        part, dest = backup.upload_paths(file.filename or "")
+        part, dest = backup.upload_paths(name)
     except backup.BackupError as exc:
         raise HTTPException(400, str(exc))
     size, limit = 0, backup.MAX_UPLOAD_MB * 1024 * 1024
     try:
         with open(part, "wb") as out:
-            while chunk := await file.read(1 << 20):
+            async for chunk in request.stream():
                 size += len(chunk)
                 if size > limit:
                     raise HTTPException(
@@ -817,9 +826,9 @@ async def upload_backup(request: Request, file: UploadFile = File(...)):
     except HTTPException:
         backup.abort_upload(part)
         raise
-    except OSError as exc:
+    except (OSError, ClientDisconnect) as exc:
         backup.abort_upload(part)
-        raise HTTPException(500, f"Écriture impossible : {exc}")
+        raise HTTPException(500, f"Envoi interrompu : {exc}")
     try:
         return await asyncio.to_thread(backup.finish_upload, part, dest)
     except backup.BackupError as exc:

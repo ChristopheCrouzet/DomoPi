@@ -132,7 +132,18 @@ fi
 # ---------------------------------------------------------------- nginx
 msg "Configuration de nginx (HTTPS)…"
 cp "$SRC_DIR/deploy/domopi-proxy-params" /etc/nginx/domopi-proxy-params
-cp "$SRC_DIR/deploy/nginx-domopi.conf" /etc/nginx/sites-available/domopi
+# La configuration du site est remplacée par celle du dépôt (elle évolue : blocs
+# d'import/téléchargement des sauvegardes…). Toute retouche locale — chemins
+# Let's Encrypt, server_name — serait perdue : on en garde donc une copie
+# datée avant écrasement, et on signale la différence.
+NGINX_SITE=/etc/nginx/sites-available/domopi
+if [ -f "$NGINX_SITE" ] && ! cmp -s "$SRC_DIR/deploy/nginx-domopi.conf" "$NGINX_SITE"; then
+    BACKUP="$NGINX_SITE.bak-$(date +%Y%m%d-%H%M%S)"
+    cp -a "$NGINX_SITE" "$BACKUP"
+    msg "  configuration nginx existante différente : copie gardée dans $BACKUP"
+    msg "  (comparez avec « diff $BACKUP $NGINX_SITE » si vous l'aviez retouchée)"
+fi
+cp "$SRC_DIR/deploy/nginx-domopi.conf" "$NGINX_SITE"
 grep -q limit_req_zone /etc/nginx/conf.d/domopi-limits.conf 2>/dev/null || \
     echo 'limit_req_zone $binary_remote_addr zone=domopi_login:1m rate=5r/m;' \
     > /etc/nginx/conf.d/domopi-limits.conf

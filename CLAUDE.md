@@ -155,7 +155,7 @@ l'outillage Claude — cf. le `CLAUDE.md` racine) :
 | `direct_example.py` | cœur métier | `query_series` et `formula` **sans serveur** (base SQLite temporaire + `fastapi.testclient`) — squelette de la future suite pytest |
 | `backup_example.py` | cœur métier | `backup.py` **sans serveur** : archive et manifeste, rétention, planification (écrêtage des mois, rattrapage), restauration des icônes, fusion d'historique (appariement, non-écrasement), écrasement complet avec et sans conservation de l'historique, garde-fous (traversée de chemin, archive étrangère, réglages invalides) — 50 contrôles |
 | `backup_ftp_example.py` | export FTP | `ftp_upload`/`ftp_test` contre un **serveur FTP minimal en stdlib** (PASV et mode actif, anonyme, création du dossier distant, **serveur qui acquiesce au CWD sans changer de dossier**, canal de données coupé, transfert tronqué, dépôt vide de 0 octet, et **FTPS réel** sur certificat auto-signé : serveur exigeant la reprise de session TLS (avec contrôle négatif prouvant que le `ftplib` nu se fait bien refuser) et clôture TLS impolie — les deux pannes Freebox) — 44 contrôles |
-| `backup_api_example.py` | API + rôles | parcours HTTP complet sur le serveur de dév : réglages et leurs 400, sauvegarde et suivi du job, téléchargement, import, restaurations, 409 de concurrence, suppression, refus 403 pour un lecteur — 48 contrôles, ré-entrant |
+| `backup_api_example.py` | API + rôles | parcours HTTP complet sur le serveur de dév : réglages et leurs 400, sauvegarde et suivi du job, téléchargement, import (dont le refus sans session **avant** lecture du corps), restaurations, 409 de concurrence, suppression, refus 403 pour un lecteur — 49 contrôles, ré-entrant |
 
 ```powershell
 $py  = "M:\Domotique\Domopi\domopi setup\venv\Scripts\python.exe"
@@ -411,14 +411,30 @@ porte l'horodatage à la seconde, suffixé `-2`, `-3`… si ce nom est déjà pr
   `ReadWritePaths=/var/lib/domopi …` → viser un autre dossier (disque USB)
   exige d'ajouter le chemin à l'unité. `check_setting("backup_dir", …)` teste
   l'écriture au moment de l'enregistrement et renvoie un 400 explicite.
+- **Import d'archive en corps brut** (`POST /api/backups/upload?name=…`, et non
+  en multipart) : avec `UploadFile`, FastAPI analyse et met en cache **tout le
+  corps avant** d'exécuter la fonction, donc avant `require_admin` — un appelant
+  non authentifié pouvait faire écrire jusqu'à `MAX_UPLOAD_MB` sur la carte SD
+  avant son 401 (mesuré : 9 Mo transférés en entier). En corps brut, le contrôle
+  d'accès précède la lecture : 401 après ~300 Ko en vol, rien sur le disque.
+  Côté navigateur, `fetch(url, {body: fichier})` — pas de `FormData`.
 - **nginx** : l'import d'archive a sa propre `location = /api/backups/upload`
   (`client_max_body_size 1024m`, `proxy_request_buffering off`, timeouts 600 s)
   et le téléchargement une `location ~ ^/api/backups/[^/]+/download$` (timeout
   600 s) — la limite globale du site reste à 8 Mo. Limite applicative :
-  `backup.MAX_UPLOAD_MB`. `deploy.ps1` ne touchant pas nginx, une installation
-  existante doit recevoir ces blocs à la main (ou `install.sh`), sinon l'import
-  reste plafonné à 8 Mo ; la restauration depuis une archive locale, elle,
-  fonctionne sans.
+  `backup.MAX_UPLOAD_MB`. Ces deux blocs **recopient les quatre
+  `proxy_set_header`** au lieu d'inclure `domopi-proxy-params` : ce fichier fixe
+  `proxy_read_timeout` à 120 s et nginx refuse la directive en double dans un
+  même bloc (`"proxy_read_timeout" directive is duplicate`, refus au `nginx -t`).
+  `deploy.ps1` ne touchant pas nginx, une installation existante doit recevoir
+  ces blocs à la main (ou par `install.sh`), sinon l'import reste plafonné à
+  8 Mo ; la restauration depuis une archive locale, elle, fonctionne sans.
+  Vérifier une conf nginx **sans root** est possible et doit être fait avant de
+  demander un `reload` : copier le candidat dans un bac à sable, remplacer les
+  chemins de certificat par un couple auto-signé et les ports par des ports
+  hauts, puis `/usr/sbin/nginx -t -c <candidat> -p <bac>` (avec `pid`,
+  `error_log`, `access_log` et les `*_temp_path` dans le bac à sable) — et faire
+  la contre-épreuve sur la version fautive.
 - **install.sh** crée `/var/lib/domopi/backups` (750, `domopi:domopi`). Le
   dossier réel est de toute façon créé à la première sauvegarde par le service.
 - **Interface** (`admin.js`, rubrique en bas de l'onglet « Réglages généraux et

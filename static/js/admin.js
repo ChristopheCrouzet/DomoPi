@@ -1353,10 +1353,13 @@
   $("#bk-upload").onchange = async ev => {
     const f = ev.target.files[0];
     if (!f) return;
-    const fd = new FormData(); fd.append("file", f);
     toast("Envoi de l'archive…");
     try {
-      const r = await fetch("/api/backups/upload", { method: "POST", body: fd });
+      // Corps brut (pas de FormData) : le serveur vérifie les droits avant de
+      // lire le moindre octet — cf. main.py:upload_backup.
+      const r = await fetch("/api/backups/upload?name=" + encodeURIComponent(f.name),
+                            { method: "POST", body: f,
+                              headers: { "Content-Type": "application/gzip" } });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
       const info = await r.json();
       toast(`Archive « ${info.name} » importée`);
