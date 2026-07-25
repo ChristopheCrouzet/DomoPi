@@ -10,10 +10,12 @@
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
     return r.json();
   };
-  const toast = msg => {
+  /* ms : durée d'affichage — allongée pour les messages longs qu'on veut avoir
+     le temps de lire (résultat du test FTP). */
+  const toast = (msg, ms = 2600) => {
     const t = document.createElement("div");
     t.className = "toast"; t.textContent = msg;
-    document.body.appendChild(t); setTimeout(() => t.remove(), 2600);
+    document.body.appendChild(t); setTimeout(() => t.remove(), ms);
   };
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -129,6 +131,7 @@
       if (Array.isArray(cr) && cr.length) chartRanges = cr;
     } catch { /* réglage absent (base antérieure) : défauts */ }
     renderRanges();
+    fillBackupSettings(s);
   }
   $("#s-save").onclick = async () => {
     await api("/api/settings", { method: "PUT", body: JSON.stringify({
@@ -1158,6 +1161,284 @@
   }
   $("#ai-icon-btn").onclick = aiIconDialog;
 
+  /* ============================================ sauvegarde et restauration */
+  /* Sauvegarde et restauration tournent côté serveur en tâche de fond (un seul
+     worker uvicorn) : on lance l'opération puis on interroge son avancement,
+     publié par GET /api/backups (clé « job »). */
+  let bkPoll = null;
+  /* Périodicité enregistrée, mémorisée à part : les libellés du <select>
+     viennent du serveur (backup.PERIODS) et peuvent arriver après les réglages
+     — poser .value sur un <select> encore vide serait sans effet. */
+  let bkPeriod = "1w";
+
+  const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " Mo"
+    : n >= 1024 ? (n / 1024).toFixed(0) + " Ko" : n + " o";
+  const fmtDate = ts => new Date(ts * 1000).toLocaleString("fr-FR",
+    { dateStyle: "short", timeStyle: "short" });
+  /* epoch <-> valeur d'un <input type="datetime-local"> (heure locale) */
+  const toLocalInput = ts => {
+    const d = new Date(ts * 1000), p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+           `T${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const fromLocalInput = v => {
+    const t = new Date(v).getTime();
+    return isNaN(t) ? 0 : Math.floor(t / 1000);
+  };
+
+  function renderBackupJob(job) {
+    const box = $("#bk-job");
+    if (!job || !job.started) { box.innerHTML = ""; return; }
+    const what = job.kind === "restore" ? "Restauration" : "Sauvegarde";
+    if (job.running) {
+      box.innerHTML = `<b>${what} en cours</b> — ${esc(job.phase)} (${job.pct} %)`;
+      return;
+    }
+    box.innerHTML = job.error
+      ? `<span style="color:var(--err)">${what} — échec : ${esc(job.error)}</span>`
+      : `${esc(job.message || what + " terminée")} <span class="muted">(${fmtDate(job.finished)})</span>`;
+  }
+
+  function renderBackups(data) {
+    $("#bk-dir").placeholder = data.default_dir;
+    const box = $("#bk-list");
+    box.innerHTML = "";
+    if (!data.entries.length) {
+      box.innerHTML = `<p class="muted">Aucune archive dans ${esc(data.dir)}.</p>`;
+      return;
+    }
+    data.entries.forEach(e => {
+      const m = e.manifest || {};
+      const c = m.counts || {};
+      const bits = [fmtSize(e.size)];
+      if (m.reason) bits.push(m.reason);
+      if (c.measures != null)
+        bits.push(`${c.measures} mesure(s), ${c.measures_daily || 0} jour(s) archivé(s)`);
+      if (c.devices != null) bits.push(`${c.devices} périphérique(s)`);
+      if (m.icons != null) bits.push(`${m.icons} icône(s), ${m.backgrounds || 0} fond(s)`);
+      if (!e.manifest) bits.push("manifeste illisible — archive étrangère ?");
+      const div = document.createElement("div");
+      div.className = "card"; div.style.marginBottom = ".5rem"; div.style.minHeight = "0";
+      div.innerHTML = `<div class="row">
+        <div><b>${fmtDate(e.mtime)}</b> <span class="muted">— ${esc(bits.join(" · "))}</span><br>
+          <span class="muted mono" style="font-size:.78rem">${esc(e.name)}</span></div>
+        <div class="fix"><button class="btn sm" data-a="restore">Restaurer</button></div>
+        <div class="fix"><a class="btn sm" href="/api/backups/${encodeURIComponent(e.name)}/download">Télécharger</a></div>
+        <div class="fix"><button class="btn sm danger" data-a="del">Supprimer</button></div></div>`;
+      div.querySelector("[data-a=restore]").onclick = () => restoreForm(e);
+      div.querySelector("[data-a=del]").onclick = async () => {
+        if (!confirm(`Supprimer définitivement l'archive « ${e.name} » ?`)) return;
+        try {
+          await api("/api/backups/" + encodeURIComponent(e.name), { method: "DELETE" });
+        } catch (err) { return toast(err.message); }
+        toast("Archive supprimée"); loadBackups();
+      };
+      box.appendChild(div);
+    });
+  }
+
+  async function loadBackups() {
+    const data = await api("/api/backups");
+    if (!$("#bk-period").options.length) {
+      $("#bk-period").innerHTML = Object.entries(data.periods)
+        .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join("");
+      $("#bk-period").value = bkPeriod;
+    }
+    renderBackups(data);
+    renderBackupJob(data.job);
+    // Une opération en cours (lancée ici ou par le collecteur) : on suit sa fin.
+    if (data.job.running && !bkPoll)
+      bkPoll = setInterval(pollBackupJob, 1500);
+    return data;
+  }
+
+  async function pollBackupJob() {
+    let data;
+    try { data = await api("/api/backups"); } catch { return; }
+    renderBackupJob(data.job);
+    if (data.job.running) return;
+    clearInterval(bkPoll); bkPoll = null;
+    renderBackups(data);
+    if (data.job.error) toast(data.job.error);
+    else {
+      toast(data.job.message || "Opération terminée");
+      // Une restauration a pu remplacer réglages, pages et périphériques :
+      // l'écran est rechargé pour repartir de la base restaurée.
+      if (data.job.kind === "restore" && data.job.report
+          && (data.job.report.full || data.job.report.history))
+        setTimeout(() => location.reload(), 1800);
+    }
+  }
+
+  function fillBackupSettings(s) {
+    $("#bk-dir").value = s.backup_dir || "";
+    $("#bk-keep").value = s.backup_keep ?? 8;
+    $("#bk-auto").checked = s.backup_auto === "1";
+    bkPeriod = s.backup_period || "1w";
+    $("#bk-period").value = bkPeriod;      // sans effet si les libellés manquent
+    const nxt = parseInt(s.backup_next_ts || "0", 10);
+    // Échéance absente ou déjà passée : on propose demain à la même heure.
+    $("#bk-next").value = toLocalInput(nxt > 0 ? nxt
+      : Math.floor(Date.now() / 1000) + 86400);
+    $("#bk-ftp").checked = s.backup_ftp_enabled === "1";
+    $("#bk-ftp-host").value = s.backup_ftp_host || "";
+    $("#bk-ftp-port").value = s.backup_ftp_port || 21;
+    $("#bk-ftp-dir").value = s.backup_ftp_dir || "";
+    $("#bk-ftp-anon").checked = s.backup_ftp_anon === "1";
+    $("#bk-ftp-user").value = s.backup_ftp_user || "";
+    $("#bk-ftp-pass").value = s.backup_ftp_pass || "";
+    $("#bk-ftp-pasv").checked = s.backup_ftp_pasv !== "0";
+    $("#bk-ftp-tls").checked = s.backup_ftp_tls === "1";
+    syncFtpFields();
+  }
+
+  /* Identifiants inutiles en anonyme : champs grisés pour éviter le doute. */
+  function syncFtpFields() {
+    const anon = $("#bk-ftp-anon").checked;
+    $("#bk-ftp-user").disabled = anon;
+    $("#bk-ftp-pass").disabled = anon;
+  }
+  $("#bk-ftp-anon").onchange = syncFtpFields;
+
+  async function saveBackupSettings() {
+    const next = fromLocalInput($("#bk-next").value);
+    if ($("#bk-auto").checked && !next)
+      return toast("Renseignez la date et l'heure de la prochaine sauvegarde");
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({
+      backup_dir: $("#bk-dir").value.trim(),
+      backup_keep: $("#bk-keep").value,
+      backup_auto: $("#bk-auto").checked ? "1" : "0",
+      backup_next_ts: String(next),
+      backup_period: $("#bk-period").value,
+      backup_ftp_enabled: $("#bk-ftp").checked ? "1" : "0",
+      backup_ftp_host: $("#bk-ftp-host").value.trim(),
+      backup_ftp_port: $("#bk-ftp-port").value,
+      backup_ftp_dir: $("#bk-ftp-dir").value.trim(),
+      backup_ftp_anon: $("#bk-ftp-anon").checked ? "1" : "0",
+      backup_ftp_user: $("#bk-ftp-user").value,
+      backup_ftp_pass: $("#bk-ftp-pass").value,
+      backup_ftp_pasv: $("#bk-ftp-pasv").checked ? "1" : "0",
+      backup_ftp_tls: $("#bk-ftp-tls").checked ? "1" : "0" }) });
+    return true;
+  }
+
+  $("#bk-save").onclick = async () => {
+    try {
+      if (!await saveBackupSettings()) return;
+    } catch (e) { return toast(e.message); }
+    toast("Réglages de sauvegarde enregistrés");
+    loadBackups();
+  };
+
+  $("#bk-ftp-test").onclick = async ev => {
+    const btn = ev.currentTarget;
+    btn.disabled = true; btn.textContent = "Test en cours…";
+    try {
+      // Le test porte sur les réglages enregistrés : on les pose d'abord.
+      await saveBackupSettings();
+      const r = await api("/api/backups/ftp-test", { method: "POST" });
+      toast(r.message, 4600);
+    } catch (e) { toast(e.message, 4600); }
+    btn.disabled = false; btn.textContent = "Tester la connexion FTP";
+  };
+
+  $("#bk-now").onclick = async () => {
+    try { await api("/api/backups/run", { method: "POST" }); }
+    catch (e) { return toast(e.message); }
+    renderBackupJob({ kind: "backup", running: true, started: 1,
+                      phase: "démarrage", pct: 0 });
+    if (!bkPoll) bkPoll = setInterval(pollBackupJob, 1500);
+  };
+
+  $("#bk-upload").onchange = async ev => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    const fd = new FormData(); fd.append("file", f);
+    toast("Envoi de l'archive…");
+    try {
+      const r = await fetch("/api/backups/upload", { method: "POST", body: fd });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+      const info = await r.json();
+      toast(`Archive « ${info.name} » importée`);
+    } catch (e) { toast(e.message); }
+    ev.target.value = "";
+    loadBackups();
+  };
+
+  function restoreForm(entry) {
+    const m = entry.manifest || {}, c = m.counts || {};
+    const lines = [
+      `Archive du ${fmtDate(m.created_ts || entry.mtime)}` +
+        (m.host ? ` (${m.host})` : "") + ` — ${fmtSize(entry.size)}`,
+      `${c.devices || 0} périphérique(s), ${c.pages || 0} page(s), ` +
+        `${c.widgets || 0} widget(s), ${c.users || 0} compte(s)`,
+      `${c.measures || 0} mesure(s) brutes, ${c.measures_daily || 0} jour(s) archivé(s)`,
+      `${m.icons || 0} icône(s), ${m.backgrounds || 0} fond(s) de page`];
+    dialog(`<h2 style="margin-top:0">Restaurer une sauvegarde</h2>
+      <p class="muted" style="margin-top:0">${lines.map(esc).join("<br>")}</p>
+      <label><input type="checkbox" id="rs-icons" style="width:auto">
+        Icônes et fonds de page <span class="muted">— les fichiers de même nom
+        sont remplacés</span></label>
+      <label><input type="checkbox" id="rs-hist" style="width:auto">
+        Historiques des capteurs présents dans les deux versions
+        <span class="muted">— fusion : les capteurs sont appariés par contrôleur
+        et identifiant (à défaut par nom), et les mesures déjà en base sont
+        conservées</span></label>
+      <label><input type="checkbox" id="rs-full" style="width:auto">
+        <b>Tout restaurer, paramètres compris</b>
+        <span class="muted">— écrase la base actuelle par celle de l'archive :
+        réglages, contrôleurs, périphériques, échelles, pages, widgets et
+        comptes utilisateurs</span></label>
+      <div id="rs-full-opts" hidden style="margin:.2rem 0 .2rem 1.4rem">
+        <label><input type="radio" name="rs-hmode" value="exact" checked style="width:auto">
+          Base de l'archive à l'identique <span class="muted">— l'historique
+          accumulé depuis la sauvegarde est perdu</span></label>
+        <label><input type="radio" name="rs-hmode" value="keep" style="width:auto">
+          Conserver l'historique accumulé depuis <span class="muted">— les
+          mesures actuelles sont réinjectées après l'écrasement</span></label>
+        ${m.secret_key ? `<label><input type="checkbox" id="rs-secret" style="width:auto">
+          Restaurer aussi la clé de session <span class="muted">— déconnecte
+          immédiatement tout le monde, vous compris</span></label>` : ""}
+      </div>
+      <p class="muted">L'opération se déroule côté serveur ; la collecte continue
+         mais évitez de modifier les réglages pendant ce temps.</p>
+      <div class="row" style="margin-top:1rem">
+        <button class="btn primary" id="rs-go">Restaurer</button>
+        <button class="btn" id="rs-cancel">Annuler</button></div>`, dlg => {
+      const full = dlg.querySelector("#rs-full");
+      full.onchange = () => {
+        dlg.querySelector("#rs-full-opts").hidden = !full.checked;
+        // Une restauration complète apporte déjà tout l'historique de l'archive.
+        const hist = dlg.querySelector("#rs-hist");
+        hist.disabled = full.checked;
+        if (full.checked) hist.checked = false;
+      };
+      dlg.querySelector("#rs-cancel").onclick = () => dlg.close();
+      dlg.querySelector("#rs-go").onclick = async () => {
+        const keep = dlg.querySelector("input[name=rs-hmode][value=keep]")?.checked;
+        const body = { name: entry.name,
+          icons: dlg.querySelector("#rs-icons").checked,
+          history: dlg.querySelector("#rs-hist").checked,
+          full: full.checked,
+          keep_history: full.checked && !!keep,
+          secret: full.checked && !!dlg.querySelector("#rs-secret")?.checked };
+        if (!body.icons && !body.history && !body.full)
+          return toast("Cochez au moins un élément à restaurer");
+        if (body.full && !confirm(
+            "La base actuelle va être remplacée par celle de l'archive " +
+            "(réglages, périphériques, pages, comptes" +
+            (body.keep_history ? "" : ", historique des mesures") +
+            "). Cette opération est irréversible. Continuer ?")) return;
+        try { await api("/api/restore", { method: "POST", body: JSON.stringify(body) }); }
+        catch (e) { return toast(e.message); }
+        dlg.close();
+        renderBackupJob({ kind: "restore", running: true, started: 1,
+                          phase: "démarrage", pct: 0 });
+        if (!bkPoll) bkPoll = setInterval(pollBackupJob, 1500);
+      };
+    });
+  }
+
   /* ============================================ onglets */
   const TABS = ["pages", "devices", "params", "icons", "general"];
   function showTab(name) {
@@ -1185,6 +1466,7 @@
     await Promise.all([loadSettings(), loadGalleries()]);
     await loadScales();          // avant les périphériques (noms d'échelles, filtre)
     restoreFilters();            // avant le premier rendu du tableau
-    await Promise.all([loadConnectors(), loadDevices(), loadPages(), loadUsers()]);
+    await Promise.all([loadConnectors(), loadDevices(), loadPages(), loadUsers(),
+                       loadBackups().catch(e => toast(e.message))]);
   })();
 })();

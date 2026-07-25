@@ -31,6 +31,7 @@ domopi setup/
 ├── domopi/                  paquet Python (backend)
 │   ├── main.py              app FastAPI : toutes les routes /api/*, sert le statique
 │   ├── db.py                schéma SQLite, réglages, query_series, rollup/purge
+│   ├── backup.py            archives .tar.gz, planification, export FTP, restauration
 │   ├── auth.py              PBKDF2 + cookie de session signé HMAC, rôles
 │   ├── journal.py           journal applicatif avec niveaux de verbosité
 │   ├── formula.py           moteur de formules des capteurs virtuels
@@ -68,6 +69,7 @@ domopi setup/
 |------|--------|
 | Code | `/opt/domopi` (copie de `domopi/` + `static/` + `requirements.txt` + venv) |
 | Données | `/var/lib/domopi/domopi.db`, `/var/lib/domopi/secret.key` |
+| Sauvegardes | `/var/lib/domopi/backups/domopi-backup-AAAAMMJJ-HHMMSS.tar.gz` (réglage `backup_dir`) |
 | Config | `/etc/domopi/domopi.env` (admin), `/etc/domopi/tls/` (certificat) |
 | systemd | `/etc/systemd/system/domopi.service` |
 | nginx | `/etc/nginx/sites-available/domopi`, `/etc/nginx/conf.d/domopi-limits.conf` |
@@ -125,12 +127,24 @@ service (`sudo systemctl restart domopi`, autorisé sans mot de passe via
 
 Accès direct pour diagnostic : `ssh PI-SERVER "journalctl -u domopi -n 50 --no-pager"`.
 
+Le script appelle explicitement le `tar` de Windows
+(`%SystemRoot%\System32\tar.exe`) : lancé depuis Git Bash, un `tar` non
+qualifié se résout vers le `tar` MSYS, qui échoue sur le chemin du projet
+(lettre de lecteur + espace dans « domopi setup ») avec un « tar a echoue »
+intermittent selon le shell appelant.
+
+Le compte `claude` n'a le droit sudo que sur `systemctl start|stop|restart
+domopi` : toute retouche de `/etc/nginx` ou de `/var/lib/domopi` (propriété
+`domopi`, 750) doit être faite par l'utilisateur. Pratique dans ce cas :
+préparer le fichier corrigé dans `/home/claude/` et fournir la commande
+`ssh -t PI-SERVER "sudo cp … && sudo nginx -t && sudo systemctl reload nginx"`.
+
 Ce circuit est réservé au développement ; l'installation propre reste
 `sudo bash install.sh` (à remettre à jour en fin de projet).
 
 ## Tests
 
-Il n'y a pas encore de suite pytest. En attendant, deux harnais **exécutés et
+Il n'y a pas encore de suite pytest. En attendant, cinq harnais **exécutés et
 vérifiés** tiennent ce rôle ; ils vivent dans le skill `/run-domopi`
 (`M:\Domotique\Domopi\.claude\skills\run-domopi\`, hors dépôt comme tout
 l'outillage Claude — cf. le `CLAUDE.md` racine) :
@@ -139,6 +153,9 @@ l'outillage Claude — cf. le `CLAUDE.md` racine) :
 |---|---|---|
 | `driver.py` | app complète | lance uvicorn sur une base jetable, peuple un jeu de démo, appelle l'API authentifiée, prend les captures Playwright |
 | `direct_example.py` | cœur métier | `query_series` et `formula` **sans serveur** (base SQLite temporaire + `fastapi.testclient`) — squelette de la future suite pytest |
+| `backup_example.py` | cœur métier | `backup.py` **sans serveur** : archive et manifeste, rétention, planification (écrêtage des mois, rattrapage), restauration des icônes, fusion d'historique (appariement, non-écrasement), écrasement complet avec et sans conservation de l'historique, garde-fous (traversée de chemin, archive étrangère, réglages invalides) — 50 contrôles |
+| `backup_ftp_example.py` | export FTP | `ftp_upload`/`ftp_test` contre un **serveur FTP minimal en stdlib** (PASV et mode actif, anonyme, création du dossier distant, **serveur qui acquiesce au CWD sans changer de dossier**, canal de données coupé, transfert tronqué, dépôt vide de 0 octet, et **FTPS réel** sur certificat auto-signé : serveur exigeant la reprise de session TLS (avec contrôle négatif prouvant que le `ftplib` nu se fait bien refuser) et clôture TLS impolie — les deux pannes Freebox) — 44 contrôles |
+| `backup_api_example.py` | API + rôles | parcours HTTP complet sur le serveur de dév : réglages et leurs 400, sauvegarde et suivi du job, téléchargement, import, restaurations, 409 de concurrence, suppression, refus 403 pour un lecteur — 48 contrôles, ré-entrant |
 
 ```powershell
 $py  = "M:\Domotique\Domopi\domopi setup\venv\Scripts\python.exe"
@@ -149,7 +166,12 @@ $drv = "M:\Domotique\Domopi\.claude\skills\run-domopi\driver.py"
 & $py $drv api GET /api/devices   # appel authentifié
 & $py $drv shots                  # 6 captures dans %TEMP%\domopi-dev\shots\
 & $py $drv mobile                 # rendu iPhone portrait : invariants mesurés
+& $py "$sk\backup_example.py"     # sauvegarde/restauration, sans serveur
+& $py "$sk\backup_ftp_example.py" # export FTP contre un serveur FTP jetable
+& $py "$sk\backup_api_example.py" # API sauvegarde/restauration (serveur requis)
 ```
+
+(`$sk` = `M:\Domotique\Domopi\.claude\skills\run-domopi`.)
 
 `smoke` couvre : connexion, 401 sans session, jeu de démo (30 j d'historique
 au pas de 5 min), lecture de toutes les routes de liste, les **trois régimes
@@ -276,6 +298,149 @@ Deux tâches distinctes, appelées par le poller à des cadences différentes :
 Le poller garde deux horodatages (`last_rollup`, `last_journal_purge`) et
 déclenche chaque tâche quand son délai est dépassé ; au premier démarrage les
 deux valent 0, donc les tâches passent une fois au lancement.
+
+## Sauvegarde et restauration (backup.py)
+
+Livrée le 25/07/2026. Rubrique « Sauvegarde et restauration » de l'onglet
+« Réglages généraux et comptes ». Une archive `.tar.gz` réunit **toutes les
+données utilisateur** : `manifest.json` (écrit **en premier** dans le tar, pour
+être relu sans décompresser l'archive entière), `README.txt`, `domopi.db`,
+`secret.key`, `icons/`, `backgrounds/`. Elle contient donc les identifiants des
+box et la clé de session → créée en `0600`, à traiter comme un secret. Le nom
+porte l'horodatage à la seconde, suffixé `-2`, `-3`… si ce nom est déjà pris
+(deux sauvegardes dans la même seconde n'écrasent pas la précédente).
+
+- **Instantané de la base** par `VACUUM INTO` (repli sur `Connection.backup()`
+  si SQLite < 3.27) : la base est en **WAL**, une copie de fichier à chaud
+  serait incohérente. Ne jamais remplacer `domopi.db` par un `os.replace` —
+  les connexions sont ouvertes et thread-locales.
+- **Exclusivité** : un `threading.Lock` non bloquant ; sauvegarde et
+  restauration ne peuvent pas se chevaucher. L'état (`phase`, `pct`, `message`,
+  `error`, `report`) est publié par `job_state()` et exposé dans `GET
+  /api/backups` → l'admin lance l'opération puis interroge cet état toutes les
+  1,5 s (les routes ne bloquent pas l'unique worker : `asyncio.to_thread`).
+- **Planification** : réglages `backup_auto`, `backup_next_ts` (epoch de la
+  prochaine échéance), `backup_period` (`backup.PERIODS` : 1d/2d/1w/2w/1m/2m/
+  6m/1y). `poller.run_forever` appelle `run_scheduled()` à chaque cycle ;
+  l'échéance suivante est posée **avant** l'exécution (un échec ne relance pas
+  une sauvegarde à chaque cycle) et calculée par pas entiers en heure locale
+  (`next_after`) : l'heure choisie est conservée, un arrêt prolongé ne produit
+  qu'un seul rattrapage. Le mois est ajouté avec écrêtage du jour (31 janvier
+  + 1 mois → 28 février). La sauvegarde automatique tourne **dans le thread du
+  collecteur** : sur une grosse base, elle décale le cycle de collecte suivant.
+- **Rétention** (`backup_keep`, défaut 8) : ne purge que les noms générés
+  `domopi-backup-*.tar.gz` — une archive importée ou déposée à la main n'est
+  jamais supprimée automatiquement.
+- **Export FTP** (`ftplib`, aucune dépendance) : `backup_ftp_*` — hôte, port,
+  dossier distant (créé s'il manque), anonyme ou identifiants, `PASV`, `FTPS`
+  explicite (`FTP_TLS` + `prot_p()`). Un échec d'export ne fait pas échouer la
+  sauvegarde locale : il part dans le rapport et le journal.
+  **Validé en production le 25/07/2026** sur une Freebox (FTPS + PASV, disque
+  USB « My Book Duo Raid »). Cinq précautions, toutes nées de cet échec réel —
+  le diagnostic a demandé trois tours parce que les symptômes (`ECONNRESET`,
+  fichier de 0 octet) ne désignaient pas leur cause :
+  - **`_FTPS` reprend la session TLS sur le canal de données** — *la* cause de
+    l'échec, à lire en premier (détail deux points plus bas).
+  - **La réponse de `CWD` n'est pas fiable** : certains serveurs (partages
+    réseau montés) répondent 250 sans changer de dossier quand la cible
+    n'existe pas. `_ftp_chdir` compare donc `PWD` avant/après chaque niveau et
+    crée (`MKD`) ce qui manque réellement — sans quoi le `STOR` partirait dans
+    le mauvais dossier. Robustesse utile, mais ce n'était pas la panne.
+  - **Le témoin de `ftp_test()` fait `PROBE_BYTES` (256 Ko)**, pas quelques
+    octets : le témoin de 12 octets d'origine « réussissait » (il déposait un
+    fichier vide sans que rien ne le vérifie) là où une vraie archive
+    échouait — **test vert, sauvegarde rouge**, le pire des cas. Le test
+    emprunte désormais le même chemin qu'un vrai envoi (même dossier, même
+    canal de données, taille relue) : un test vert prédit un export vert.
+  - **Taille relue par `SIZE`** après chaque dépôt (test et envoi réel) :
+    détecte un transfert tronqué ou **vide** qu'aucune erreur n'a signalé.
+    C'est ce contrôle qui a rendu la panne visible. Serveur sans `SIZE` →
+    contrôle ignoré, jamais bloquant. Le reste incomplet est effacé du serveur
+    (`_ftp_cleanup`) pour ne pas laisser de fichiers vides derrière.
+  - **`_FTPS` reprend la session TLS sur le canal de données** — le point qui
+    faisait échouer tout export FTPS (Freebox, 25/07/2026) :
+    `FTP_TLS.ntransfercmd` enveloppe la connexion de données dans une session
+    TLS **neuve**, alors que la plupart des serveurs FTPS exigent la reprise de
+    celle du canal de commande (vsftpd `require_ssl_reuse=YES`, **son défaut** ;
+    proftpd `NoSessionReuseRequired` pour s'en passer). Sans reprise, le serveur
+    coupe la connexion de données dès la poignée de main : `ECONNRESET` et
+    **fichier créé mais vide**, en PASV **comme** en actif — d'où le faux
+    diagnostic « pare-feu / mode actif ». `_FTPS.ntransfercmd` court-circuite
+    donc `FTP_TLS` (appel direct à `FTP.ntransfercmd`) et enveloppe lui-même en
+    passant `session=self.sock.session`. Corollaire : le contexte TLS est
+    **plafonné à TLS 1.2** (`_tls_client_context`) — la reprise ne survit pas
+    aux tickets de TLS 1.3 sur ces serveurs. La demande correspondante à
+    CPython n'a jamais été retenue : ne pas « simplifier » vers `FTP_TLS`.
+  - **`_FTPS` tolère aussi une clôture TLS impolie** : en
+    fin de `storbinary`, ftplib appelle `unwrap()` sur la connexion de données
+    pour échanger le `close_notify`. Les serveurs embarqués (Freebox, NAS)
+    ferment sèchement à la place → `ECONNRESET` **alors que le fichier est
+    intégralement arrivé**. `ntransfercmd` enveloppe donc `unwrap` pour ignorer
+    l'échec de cette seule étape ; c'est sans risque puisque `SIZE` tranche
+    ensuite. Ne pas « simplifier » en revenant à `FTP_TLS` : l'export FTPS
+    échouerait sur un fichier pourtant bien déposé.
+  Les messages distinguent les étages : connexion, authentification, création
+  de dossier, refus du serveur (droits/quota), canal de données coupé (avec la
+  piste PASV/actif), dépôt incomplet. Leçon de méthode : une coupure du canal
+  de données FTPS **n'est pas** une présomption de pare-feu — si le mode actif
+  *et* le mode passif échouent alors que le FTP en clair passe, c'est la couche
+  TLS du canal de données, pas le réseau.
+- **Restauration**, trois volets combinables (`POST /api/restore`) :
+  `icons` (icônes + fonds, écrase les fichiers de même nom), `history`
+  (**fusion** : appariement `(type de contrôleur, external_id)` avec repli sur
+  le nom normalisé — `formula._norm` — non ambigu, puis `INSERT OR IGNORE` sur
+  `measures` et `measures_daily` : les points déjà en base gagnent), `full`
+  (base de l'archive à l'identique). Option `keep_history` du mode complet :
+  un instantané de la base courante est pris avant l'écrasement puis refusionné
+  après, ce qui conserve les mesures accumulées depuis la sauvegarde. Option
+  `secret` : remplace `secret.key` (déconnecte tout le monde,
+  `auth.forget_secret()` vide le cache module).
+- **Écrasement sans substitution de fichier** (`_restore_full`) : la base de
+  l'archive est `ATTACH`ée, chaque table vidée puis recopiée en une transaction,
+  sur l'**intersection des colonnes** des deux schémas (une archive au schéma
+  antérieur passe donc), `PRAGMA foreign_keys=OFF` le temps de l'opération,
+  puis `db.init_db()` (migrations + réglages par défaut manquants) et
+  `poller.reset_instances()` (les contrôleurs viennent de changer en bloc).
+  Après ce mode, **les comptes sont ceux de l'archive**.
+- **Sécurité d'extraction** : `tarfile.extract()` n'est jamais utilisé. Seuls
+  sont extraits les membres d'une liste blanche (`manifest.json`, `README.txt`,
+  `domopi.db`, `secret.key`, `icons|backgrounds/<nom sûr>`), copiés à la main
+  par `extractfile()` → aucune traversée de chemin possible. Un fichier sans
+  manifeste `{"app": "DomoPi"}` est rejeté (import comme restauration).
+- **Chemin d'écriture** : `domopi.service` a `ProtectSystem=full` et
+  `ReadWritePaths=/var/lib/domopi …` → viser un autre dossier (disque USB)
+  exige d'ajouter le chemin à l'unité. `check_setting("backup_dir", …)` teste
+  l'écriture au moment de l'enregistrement et renvoie un 400 explicite.
+- **nginx** : l'import d'archive a sa propre `location = /api/backups/upload`
+  (`client_max_body_size 1024m`, `proxy_request_buffering off`, timeouts 600 s)
+  et le téléchargement une `location ~ ^/api/backups/[^/]+/download$` (timeout
+  600 s) — la limite globale du site reste à 8 Mo. Limite applicative :
+  `backup.MAX_UPLOAD_MB`. `deploy.ps1` ne touchant pas nginx, une installation
+  existante doit recevoir ces blocs à la main (ou `install.sh`), sinon l'import
+  reste plafonné à 8 Mo ; la restauration depuis une archive locale, elle,
+  fonctionne sans.
+- **install.sh** crée `/var/lib/domopi/backups` (750, `domopi:domopi`). Le
+  dossier réel est de toute façon créé à la première sauvegarde par le service.
+- **Interface** (`admin.js`, rubrique en bas de l'onglet « Réglages généraux et
+  comptes ») :
+  - `toast(msg, ms = 2600)` accepte une durée : le résultat du test FTP, long à
+    lire, s'affiche 4600 ms.
+  - Piège rencontré : les libellés du `<select>` de périodicité viennent du
+    serveur (`GET /api/backups`) et peuvent arriver **après** `loadSettings()` —
+    poser `.value` sur un `<select>` encore vide est sans effet et la valeur
+    enregistrée semblait ignorée. La valeur voulue est donc mémorisée dans
+    `bkPeriod` et réappliquée au remplissage des options. Même précaution pour
+    tout futur `<select>` alimenté par le serveur.
+  - Pendant une opération, l'admin interroge `GET /api/backups` toutes les
+    1,5 s ; le job survit à la fermeture de la page (au retour, la rubrique
+    reprend le suivi). Une restauration `full`/`history` recharge la page à la
+    fin (réglages, pages et périphériques ont pu changer en bloc).
+  - CSS ajouté : `input[type=datetime-local]` dans la liste des champs stylés,
+    `input:disabled { opacity: .5 }` (identifiants FTP grisés en mode anonyme),
+    `a.btn` (le lien « Télécharger » présenté en bouton).
+- **Dossiers statiques** : `STATIC_DIR` / `ICONS_DIR` / `BACKGROUNDS_DIR` sont
+  définis dans `backup.py` (qui les archive) et importés par `main.py` — une
+  seule définition.
 
 ## Icônes (static/icons/ + tools/make_icons.py)
 

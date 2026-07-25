@@ -145,6 +145,23 @@ DEFAULT_SETTINGS = {
         '{"label": "30 j", "span_s": 2592000, "mode": "minmax"}, '
         '{"label": "90 j", "span_s": 7776000, "mode": "minmax"}, '
         '{"label": "6 mois", "span_s": 15724800, "mode": "minmax"}]'),
+    # Sauvegarde et restauration (backup.py). Dossier vide = <dossier de la
+    # base>/backups ; l'échéance backup_next_ts est avancée par le collecteur
+    # à chaque sauvegarde automatique selon backup_period (cf. backup.PERIODS).
+    "backup_dir": "",
+    "backup_keep": "8",              # archives générées conservées (0 = illimité)
+    "backup_auto": "0",
+    "backup_next_ts": "0",           # epoch s de la prochaine sauvegarde auto
+    "backup_period": "1w",
+    "backup_ftp_enabled": "0",
+    "backup_ftp_host": "",
+    "backup_ftp_port": "21",
+    "backup_ftp_anon": "0",
+    "backup_ftp_user": "",
+    "backup_ftp_pass": "",
+    "backup_ftp_dir": "",
+    "backup_ftp_pasv": "1",
+    "backup_ftp_tls": "0",
 }
 
 

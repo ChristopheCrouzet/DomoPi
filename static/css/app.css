@@ -179,10 +179,13 @@ input[type=range] { accent-color: var(--amber); }
 
 /* ---------------- formulaires ---------------- */
 label { display: block; font-size: .82rem; color: var(--muted); margin: .5rem 0 .15rem; }
-input[type=text], input[type=password], input[type=number], select, textarea {
+input[type=text], input[type=password], input[type=number],
+input[type=datetime-local], select, textarea {
   width: 100%; background: var(--bg); color: var(--txt);
   border: 1px solid var(--line); border-radius: 7px; padding: .45rem .6rem;
 }
+/* Champ grisé (identifiants FTP en mode anonyme) */
+input:disabled { opacity: .5; }
 input:focus, select:focus, textarea:focus, button:focus-visible {
   outline: 2px solid var(--copper); outline-offset: 1px;
 }
@@ -192,6 +195,8 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
 .btn.primary { background: var(--copper); border-color: var(--copper); color: #fff; }
 .btn.danger { border-color: var(--err); color: var(--err); background: transparent; }
 .btn.sm { padding: .2rem .55rem; font-size: .8rem; }
+/* Lien présenté en bouton (téléchargement d'une sauvegarde) : même gabarit */
+a.btn { display: inline-block; text-decoration: none; line-height: normal; }
 /* bouton « Parcourir » des champs fichier : même style que les .btn */
 input[type=file]::file-selector-button { background: var(--panel-2);
   color: var(--txt); border: 1px solid var(--line); border-radius: 7px;

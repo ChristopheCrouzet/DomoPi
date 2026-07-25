@@ -12,10 +12,21 @@ import json
 import math
 import time
 
-from . import db, journal
+from . import backup, db, journal
 from .connectors import REGISTRY
 
 _instances: dict[int, object] = {}   # connector_id -> instance démarrée
+
+
+def reset_instances():
+    """Arrête et oublie les instances en cache (après restauration de la base :
+    les contrôleurs et leurs configurations viennent de changer en bloc)."""
+    for inst in list(_instances.values()):
+        try:
+            inst.stop()
+        except Exception as exc:
+            journal.debug("poller", f"arrêt d'instance en erreur : {exc}")
+    _instances.clear()
 
 
 def get_instance(connector_id: int):
@@ -107,6 +118,12 @@ async def run_forever():
                 journal.info("poller", "archivage/purge des mesures effectué")
             except Exception as exc:
                 journal.error("poller", f"échec archivage : {exc}")
+        # Sauvegarde automatique : échéance datée, avancée par backup.py selon
+        # la périodicité choisie (le réglage est relu à chaque cycle).
+        try:
+            await asyncio.to_thread(backup.run_scheduled, started)
+        except Exception as exc:
+            journal.error("backup", f"échec de la sauvegarde automatique : {exc}")
         # Purge du journal : hebdomadaire
         if started - last_journal_purge > 7 * 86400:
             try:

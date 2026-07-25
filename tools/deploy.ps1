@@ -23,7 +23,12 @@ $Root = Split-Path -Parent $PSScriptRoot
 $Tarball = Join-Path $env:TEMP "domopi-deploy.tar.gz"
 
 Write-Host "[1/3] Archive du code..."
-tar -czf $Tarball --exclude "__pycache__" -C $Root domopi static requirements.txt
+# tar de Windows explicitement : lance depuis Git Bash, le PATH herite fait
+# resoudre "tar" vers le tar MSYS, qui echoue sur le chemin Windows du projet
+# (lettre de lecteur + espace dans "domopi setup").
+$Tar = Join-Path $env:SystemRoot "System32\tar.exe"
+if (-not (Test-Path $Tar)) { $Tar = "tar" }
+& $Tar -czf $Tarball --exclude "__pycache__" -C $Root domopi static requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "tar a echoue" }
 
 Write-Host "[2/3] Envoi vers ${RemoteHost}..."

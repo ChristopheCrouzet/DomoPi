@@ -219,6 +219,72 @@
       <select id="u-role"><option value="reader">Lecteur</option><option value="admin">Admin</option></select></div>
     <div class="fix"><button class="btn" id="u-add">Créer</button></div>
   </div>
+
+  <h2>Sauvegarde et restauration</h2>
+  <p class="muted">Une sauvegarde est une archive <span class="mono">.tar.gz</span>
+     réunissant <b>toutes les données utilisateur</b> : la base complète
+     (réglages, contrôleurs <i>avec leurs identifiants</i>, périphériques,
+     échelles, pages et widgets, comptes, historique des mesures et journal),
+     les icônes, les fonds de page et la clé de signature des sessions. Elle est
+     écrite dans un dossier du Pi, en accès restreint —
+     <b>à conserver comme un secret</b>. Ne sont pas sauvegardés (à reposer à la
+     main sur une installation neuve) : <span class="mono">/etc/domopi/domopi.env</span>
+     (mot de passe admin initial, clé API), le certificat TLS et les
+     configurations nginx/mosquitto.</p>
+  <div class="row">
+    <div><label for="bk-dir">Dossier des sauvegardes sur le Pi (vide = dossier par défaut)</label>
+      <input id="bk-dir" type="text" placeholder="/var/lib/domopi/backups"></div>
+    <div style="flex:0 0 190px;min-width:0"><label for="bk-keep"
+        title="Au-delà, les archives générées les plus anciennes sont supprimées après chaque sauvegarde. Les archives importées ou déposées à la main ne sont jamais purgées.">Archives conservées (0 = illimité)</label>
+      <input id="bk-keep" type="number" min="0" max="365"></div>
+  </div>
+
+  <h3>Sauvegardes automatiques</h3>
+  <div class="row">
+    <div class="fix"><label><input type="checkbox" id="bk-auto" style="width:auto">
+      Activer</label></div>
+    <div><label for="bk-next">Prochaine sauvegarde</label>
+      <input id="bk-next" type="datetime-local"></div>
+    <div><label for="bk-period">Périodicité</label><select id="bk-period"></select></div>
+  </div>
+
+  <h3>Export FTP des sauvegardes (optionnel)</h3>
+  <p class="muted">Chaque sauvegarde réussie est ensuite déposée sur ce serveur.
+     Un échec d'envoi n'annule pas la sauvegarde locale (il est consigné dans le
+     journal).</p>
+  <div class="row">
+    <div class="fix"><label><input type="checkbox" id="bk-ftp" style="width:auto">
+      Activer l'export</label></div>
+    <div><label for="bk-ftp-host">Serveur</label>
+      <input id="bk-ftp-host" type="text" placeholder="nas.local ou 192.168.1.50"></div>
+    <div style="flex:0 0 110px;min-width:0"><label for="bk-ftp-port">Port</label>
+      <input id="bk-ftp-port" type="number" min="1" max="65535"></div>
+    <div><label for="bk-ftp-dir">Dossier distant (créé si absent)</label>
+      <input id="bk-ftp-dir" type="text" placeholder="domopi/sauvegardes"></div>
+  </div>
+  <div class="row">
+    <div class="fix"><label><input type="checkbox" id="bk-ftp-anon" style="width:auto">
+      Anonyme</label></div>
+    <div><label for="bk-ftp-user">Identifiant</label><input id="bk-ftp-user" type="text"></div>
+    <div><label for="bk-ftp-pass">Mot de passe</label><input id="bk-ftp-pass" type="password"></div>
+    <div class="fix"><label title="Mode passif : le serveur ouvre le canal de données. À laisser coché derrière un routeur/pare-feu."><input type="checkbox" id="bk-ftp-pasv" style="width:auto">
+      PASV</label></div>
+    <div class="fix"><label title="FTPS explicite (AUTH TLS) : identifiants et archive chiffrés sur le réseau. Le serveur FTP doit le proposer."><input type="checkbox" id="bk-ftp-tls" style="width:auto">
+      FTPS (TLS)</label></div>
+  </div>
+  <div class="row" style="margin-top:.8rem">
+    <div class="fix"><button class="btn primary" id="bk-save">Enregistrer les réglages de sauvegarde</button></div>
+    <div class="fix"><button class="btn" id="bk-ftp-test">Tester la connexion FTP</button></div>
+    <div class="fix"><button class="btn" id="bk-now">Sauvegarder maintenant</button></div>
+  </div>
+  <div id="bk-job" class="muted" style="margin-top:.6rem"></div>
+
+  <h3>Sauvegardes disponibles</h3>
+  <div id="bk-list"></div>
+  <div class="row" style="margin-top:.6rem">
+    <div><label for="bk-upload">Importer une archive depuis ce poste (elle rejoint le dossier des sauvegardes)</label>
+      <input type="file" id="bk-upload" accept=".gz,.tgz,.tar.gz"></div>
+  </div>
   </section>
 
 </main>

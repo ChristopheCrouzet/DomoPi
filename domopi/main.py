@@ -15,13 +15,11 @@ from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, auth, formula, icon_ai, journal, poller
+from . import backup, db, auth, formula, icon_ai, journal, poller
 from .connectors import REGISTRY
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATIC_DIR = os.environ.get("DOMOPI_STATIC", os.path.join(BASE_DIR, "static"))
-ICONS_DIR = os.path.join(STATIC_DIR, "icons")
-BACKGROUNDS_DIR = os.path.join(STATIC_DIR, "backgrounds")
+# Chemins des dossiers statiques : définis une seule fois, dans backup.py (qui
+# les archive) et réutilisés ici (uploads, montage /static).
+from .backup import STATIC_DIR, ICONS_DIR, BACKGROUNDS_DIR
 
 app = FastAPI(title="DomoPi", docs_url=None, redoc_url=None)
 
@@ -83,7 +81,13 @@ async def me(request: Request):
 SETTABLE = {"poll_interval_s", "raw_retention_days", "journal_level",
             "journal_retention_days", "site_title",
             "display_sig_digits", "display_thousands_sep", "display_decimal_sep",
-            "chart_ranges"}
+            "chart_ranges",
+            # sauvegarde/restauration (validés par backup.check_setting)
+            "backup_dir", "backup_keep", "backup_auto", "backup_next_ts",
+            "backup_period", "backup_ftp_enabled", "backup_ftp_host",
+            "backup_ftp_port", "backup_ftp_anon", "backup_ftp_user",
+            "backup_ftp_pass", "backup_ftp_dir", "backup_ftp_pasv",
+            "backup_ftp_tls"}
 
 # Réglages d'affichage exposés aux lecteurs (le visualiseur formate les valeurs
 # des tuiles avec, sans avoir accès aux réglages complets réservés à l'admin).
@@ -137,6 +141,11 @@ async def put_settings(request: Request):
         if k in SETTABLE:
             if k == "chart_ranges":
                 v = _check_chart_ranges(str(v))
+            elif k.startswith("backup_"):
+                try:
+                    v = backup.check_setting(k, str(v))
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc))
             db.set_setting(k, str(v))
     journal.info("settings", f"paramètres modifiés : {', '.join(body)}")
     return {"ok": True}
@@ -749,6 +758,126 @@ async def get_journal(request: Request, limit: int = 200, level: str = ""):
     q += " ORDER BY ts DESC, id DESC LIMIT ?"
     args.append(min(limit, 2000))
     return [dict(r) for r in db.get_conn().execute(q, args).fetchall()]
+
+
+# ================================================================ sauvegardes
+# Sauvegarde et restauration tournent dans un thread (verrou dans backup.py) :
+# l'unique worker uvicorn reste disponible pendant l'opération, dont l'avancement
+# est publié par backup.job_state() et lu par l'admin via GET /api/backups.
+async def _run_bg(fn, *args):
+    """Lance une opération de sauvegarde/restauration en tâche de fond.
+
+    L'erreur n'est pas propagée (personne n'attend la réponse) : elle est déjà
+    consignée dans l'état du job et dans le journal applicatif.
+    """
+    try:
+        await asyncio.to_thread(fn, *args)
+    except backup.BackupError:
+        pass
+
+
+@app.get("/api/backups")
+async def list_backups(request: Request):
+    """Archives présentes, dossier utilisé et avancement de l'opération en cours."""
+    auth.require_admin(request)
+    return {"dir": backup.backup_dir(),
+            "default_dir": backup.default_backup_dir(),
+            "periods": {k: v[0] for k, v in backup.PERIODS.items()},
+            "max_upload_mb": backup.MAX_UPLOAD_MB,
+            "entries": backup.list_backups(),
+            "job": backup.job_state()}
+
+
+@app.post("/api/backups/run")
+async def run_backup_now(request: Request):
+    auth.require_admin(request)
+    if backup.job_state()["running"]:
+        raise HTTPException(409, "Une sauvegarde ou une restauration est déjà en cours")
+    asyncio.create_task(_run_bg(backup.run_backup, "manuelle"))
+    return {"started": True}
+
+
+@app.post("/api/backups/upload")
+async def upload_backup(request: Request, file: UploadFile = File(...)):
+    """Dépose une archive venue du poste client dans le dossier de sauvegarde."""
+    auth.require_admin(request)
+    try:
+        part, dest = backup.upload_paths(file.filename or "")
+    except backup.BackupError as exc:
+        raise HTTPException(400, str(exc))
+    size, limit = 0, backup.MAX_UPLOAD_MB * 1024 * 1024
+    try:
+        with open(part, "wb") as out:
+            while chunk := await file.read(1 << 20):
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(
+                        413, f"Archive trop volumineuse (max {backup.MAX_UPLOAD_MB} Mo)")
+                out.write(chunk)
+    except HTTPException:
+        backup.abort_upload(part)
+        raise
+    except OSError as exc:
+        backup.abort_upload(part)
+        raise HTTPException(500, f"Écriture impossible : {exc}")
+    try:
+        return await asyncio.to_thread(backup.finish_upload, part, dest)
+    except backup.BackupError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/backups/{name}/download")
+async def download_backup(name: str, request: Request):
+    auth.require_admin(request)
+    try:
+        path = backup.archive_path(name)
+    except backup.BackupError as exc:
+        raise HTTPException(404, str(exc))
+    return FileResponse(path, media_type="application/gzip", filename=name)
+
+
+@app.delete("/api/backups/{name}")
+async def delete_backup(name: str, request: Request):
+    auth.require_admin(request)
+    try:
+        backup.delete_backup(name)
+    except backup.BackupError as exc:
+        raise HTTPException(404, str(exc))
+    except OSError as exc:
+        raise HTTPException(500, f"Suppression impossible : {exc}")
+    return {"ok": True}
+
+
+@app.post("/api/backups/ftp-test")
+async def test_ftp(request: Request):
+    """Teste la configuration FTP d'export (connexion, identifiants, écriture)."""
+    auth.require_admin(request)
+    try:
+        return await asyncio.to_thread(backup.ftp_test)
+    except backup.BackupError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/restore")
+async def restore(request: Request):
+    """Restauration depuis une archive du dossier de sauvegarde.
+
+    Body : {name, icons, history, full, keep_history, secret} — cf. backup.py.
+    """
+    auth.require_admin(request)
+    b = await request.json()
+    if backup.job_state()["running"]:
+        raise HTTPException(409, "Une sauvegarde ou une restauration est déjà en cours")
+    opts = {k: bool(b.get(k)) for k in ("icons", "history", "full",
+                                        "keep_history", "secret")}
+    try:
+        backup.archive_path(str(b.get("name") or ""))
+        if not any(opts[k] for k in ("icons", "history", "full")):
+            raise backup.BackupError("Rien à restaurer : cochez au moins un élément")
+    except backup.BackupError as exc:
+        raise HTTPException(400, str(exc))
+    asyncio.create_task(_run_bg(backup.run_restore, str(b["name"]), opts))
+    return {"started": True}
 
 
 # ================================================================ icônes/fonds

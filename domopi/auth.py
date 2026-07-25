@@ -30,6 +30,21 @@ def _get_secret() -> bytes:
     return _secret
 
 
+def ensure_secret() -> str:
+    """Crée la clé de session si elle n'existe pas encore (elle ne l'est sinon
+    qu'à la première connexion) et renvoie son chemin — utilisé par la
+    sauvegarde, pour que l'archive contienne toujours la clé en vigueur."""
+    _get_secret()
+    return SECRET_PATH
+
+
+def forget_secret():
+    """Oublie la clé en cache (après restauration de secret.key) : les cookies
+    signés avec l'ancienne clé deviennent invalides, tout le monde se reconnecte."""
+    global _secret
+    _secret = None
+
+
 # ------------------------------------------------------------ mots de passe
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)

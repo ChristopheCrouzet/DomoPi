@@ -7,7 +7,7 @@
 #   - nginx (reverse proxy HTTPS, certificat auto-signé, durcissement basique)
 #   - Mosquitto (broker MQTT local pour le WES Cartelectronic)
 #   - Python 3 + venv + application DomoPi (FastAPI/uvicorn, service systemd)
-#   - Base SQLite dans /var/lib/domopi
+#   - Base SQLite dans /var/lib/domopi (+ dossier de sauvegardes)
 #
 # Usage :  sudo bash install.sh
 # Relançable sans risque (idempotent).
@@ -56,8 +56,13 @@ msg "Environnement Python (venv)…"
 "$APP_DIR/venv/bin/pip" install --quiet --upgrade pip
 "$APP_DIR/venv/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
 
+# Dossier des sauvegardes (réglable dans l'admin, mais domopi.service n'autorise
+# l'écriture que sous $DATA_DIR : un autre emplacement — disque USB… — demande
+# d'ajouter son chemin à ReadWritePaths= dans /etc/systemd/system/domopi.service).
+mkdir -p "$DATA_DIR/backups"
+
 chown -R domopi:domopi "$DATA_DIR" "$APP_DIR/static/icons" "$APP_DIR/static/backgrounds"
-chmod 750 "$DATA_DIR"
+chmod 750 "$DATA_DIR" "$DATA_DIR/backups"
 
 # ---------------------------------------------------------------- admin
 if [ ! -f "$CONF_DIR/domopi.env" ]; then

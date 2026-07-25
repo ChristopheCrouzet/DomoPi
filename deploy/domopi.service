@@ -19,6 +19,9 @@ RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
+# Les sauvegardes sont écrites dans /var/lib/domopi/backups (réglable dans
+# l'admin) : viser un autre emplacement — disque USB, partage monté — demande
+# d'ajouter son chemin ici, sinon l'écriture est refusée par systemd.
 ReadWritePaths=/var/lib/domopi /opt/domopi/static/icons /opt/domopi/static/backgrounds
 PrivateTmp=true
 

@@ -201,11 +201,66 @@ Emplacements :
 
 ---
 
-## Sauvegarde
+## Sauvegarde et restauration
 
-L'essentiel tient dans `/var/lib/domopi` (base + clé de session) et
-`/etc/domopi` (compte admin, certificat). Une copie de ces deux dossiers suffit
-à restaurer l'installation.
+Tout se fait depuis l'interface : **Paramètres → « Réglages généraux et
+comptes » → « Sauvegarde et restauration »**.
+
+Une sauvegarde est une archive `.tar.gz` réunissant **toutes les données
+utilisateur** : la base complète (réglages, contrôleurs *avec leurs
+identifiants*, périphériques, échelles, pages et widgets, comptes, historique
+des mesures et journal), les icônes, les fonds de page et la clé de signature
+des sessions. Elle est écrite en `0600` dans `/var/lib/domopi/backups`
+(dossier réglable) et **contient des identifiants : traitez-la comme un
+secret**.
+
+Ne sont pas sauvegardés, car hors de portée du service : `/etc/domopi/domopi.env`
+(mot de passe admin initial, `ANTHROPIC_API_KEY`), le certificat TLS de
+`/etc/domopi/tls/` et les configurations nginx/mosquitto — ces trois-là sont
+reposés par `install.sh` sur une machine neuve.
+
+- **Sauvegarder maintenant** lance l'archive immédiatement ; l'avancement
+  s'affiche sous les boutons et l'opération se poursuit même si vous quittez la
+  page.
+- **Sauvegardes automatiques** : cochez « Activer », donnez la date et l'heure
+  de la prochaine sauvegarde et une périodicité (tous les jours, tous les
+  2 jours, chaque semaine ou 2 semaines, tous les mois, 2 mois, 6 mois ou tous
+  les ans). L'heure choisie est conservée d'une échéance à l'autre ; si le Pi
+  était éteint, une seule sauvegarde de rattrapage est faite au redémarrage.
+- **Archives conservées** : au-delà de ce nombre, les plus anciennes archives
+  *générées automatiquement* sont supprimées après chaque sauvegarde (0 =
+  illimité). Les archives importées ou déposées à la main ne sont jamais
+  purgées.
+- **Export FTP** (optionnel) : chaque archive réussie est déposée sur un serveur
+  FTP — serveur, port, dossier distant (créé s'il manque), mode anonyme ou
+  identifiants, mode **PASV** et **FTPS** (TLS explicite, recommandé puisque
+  l'archive contient vos identifiants de box). Le bouton « Tester la connexion
+  FTP » vérifie l'accès *et* le droit d'écriture. Un échec d'envoi n'annule pas
+  la sauvegarde locale : il est consigné dans le journal.
+- **Dossier des sauvegardes** : par défaut `/var/lib/domopi/backups`. Pour
+  écrire ailleurs (disque USB…), ajoutez le chemin à `ReadWritePaths=` dans
+  `/etc/systemd/system/domopi.service` puis
+  `systemctl daemon-reload && systemctl restart domopi` — sinon systemd refuse
+  l'écriture et l'interface le signale.
+
+### Restaurer
+
+Chaque archive listée offre **Restaurer**, **Télécharger** et **Supprimer** ; le
+champ d'import permet d'envoyer une archive depuis votre PC (utile pour migrer
+vers un nouveau Pi). La restauration est sélective :
+
+| À restaurer | Effet |
+|---|---|
+| Icônes et fonds de page | Les fichiers de même nom sont remplacés, les autres conservés. |
+| Historiques des capteurs présents dans les deux versions | **Fusion** : les capteurs sont appariés par contrôleur + identifiant (à défaut par nom) et seuls les trous sont comblés — les mesures déjà en base ne sont jamais écrasées. |
+| Tout restaurer, paramètres compris | **Écrase la base actuelle** par celle de l'archive : réglages, contrôleurs, périphériques, échelles, pages, widgets, comptes. Au choix, la base de l'archive *à l'identique*, ou en conservant l'historique accumulé depuis la sauvegarde (les mesures actuelles sont réinjectées après l'écrasement). |
+
+Après une restauration complète, **les comptes et mots de passe sont ceux de
+l'archive**. La clé de session n'est remplacée que si vous cochez l'option
+correspondante (cela déconnecte immédiatement tout le monde).
+
+Sauvegarde et restauration s'excluent l'une l'autre et se déroulent côté
+serveur : la supervision continue de tourner pendant l'opération.
 
 ---
 
