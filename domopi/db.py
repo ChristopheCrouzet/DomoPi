@@ -212,6 +212,22 @@ def init_db():
             "VALUES('virtual','Capteurs virtuels',1,'{}')")
         conn.execute("INSERT INTO settings(key,value) VALUES('virtual_connector_id',?)",
                      (str(cur.lastrowid),))
+    # Invariant des périphériques virtuels : le type suit la formule (avec
+    # formule = capteur calculé, sans formule = sortie réglable à la main).
+    # Réaligné au démarrage pour les bases antérieures à cette règle ; les
+    # écritures passent toutes par main.py:update_device, qui l'applique aussi.
+    vid = conn.execute("SELECT value FROM settings WHERE key='virtual_connector_id'"
+                       ).fetchone()
+    if vid:
+        for r in conn.execute("SELECT id, kind, meta FROM devices WHERE connector_id=?",
+                              (int(vid["value"]),)).fetchall():
+            try:
+                has_formula = bool((json.loads(r["meta"] or "{}").get("formula") or "").strip())
+            except ValueError:
+                has_formula = False
+            want = "sensor" if has_formula else "actuator"
+            if r["kind"] != want:
+                conn.execute("UPDATE devices SET kind=? WHERE id=?", (want, r["id"]))
     conn.commit()
 
 
@@ -244,6 +260,22 @@ def store_measure(device_id: int, ts: int, value: float):
         "UPDATE devices SET last_value=?, last_seen=? WHERE id=?",
         (str(value), ts, device_id))
     conn.commit()
+
+
+def delete_history(device_id: int) -> tuple[int, int]:
+    """Efface l'historique d'un périphérique (brut + archives journalières).
+
+    `last_value` n'est pas touché : la tuile continue d'afficher l'état courant,
+    seul l'historique des graphes et des exports disparaît. Renvoie le nombre
+    de mesures et d'archives supprimées.
+    """
+    conn = get_conn()
+    n_raw = conn.execute("DELETE FROM measures WHERE device_id=?",
+                         (device_id,)).rowcount
+    n_day = conn.execute("DELETE FROM measures_daily WHERE device_id=?",
+                         (device_id,)).rowcount
+    conn.commit()
+    return n_raw, n_day
 
 
 def query_series(device_id: int, t_from: int, t_to: int, mode: str = "auto") -> dict:

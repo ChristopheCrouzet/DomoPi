@@ -79,15 +79,37 @@ Tout se fait dans **Paramètres** (bandeau supérieur, compte admin).
 
 ## Utilisation
 
+Dans l'administration, **tout est enregistré à la volée** : une case ou une
+liste déroulante part au clic, un champ de saisie dès que vous en sortez (un
+message « Enregistré » le confirme). Il n'y a aucun bouton « Enregistrer ». Une
+valeur refusée par le serveur est signalée et le champ revient à ce qui est
+réellement enregistré.
+
 - **Périphériques** : cochez ceux à historiser. Pour les sorties (actionneurs),
   cochez « pilotable » pour autoriser leur commande depuis les pages.
   Associez à chaque périphérique une icône « état actif » et « état inactif ».
+- **Essayer un périphérique et récupérer ses données** : dans le tableau des
+  périphériques, cliquez sur le mot **« sortie »** ou **« capteur »** de la
+  colonne *Type*. Une fenêtre s'ouvre, composée comme une page de
+  visualisation :
+  - la **tuile telle que la verront vos lecteurs** — de quoi tester un ordre
+    marche/arrêt, un gradateur ou une consigne et vérifier le format affiché ;
+  - **« Télécharger les données régulières »** : toutes les mesures au pas de
+    collecte, en fichier **ODS** (LibreOffice Calc, Excel) ;
+  - **« Télécharger les données synthétiques »** : un min / moyenne / max par
+    jour, archives comprises — donc bien au-delà de la rétention du brut ;
+  - **« Effacer l'historique »** : supprime les mesures de ce périphérique
+    (confirmation demandée) ; la valeur courante et les widgets sont conservés ;
+  - le **graphe** habituel, avec ses boutons de période.
+
+  Les trois dernières tuiles n'apparaissent que si des données ont été
+  enregistrées.
 - **Pages** : arborescentes, plusieurs racines possibles. Chaque page a un fond
   paramétrable (couleur ou image), et une option « double rendu » pour définir
   des widgets différents sur smartphone et sur PC. On y pose des widgets :
   périphérique (icône + valeur), graphe, lien vers une autre page, ou texte.
 - **Graphes** : boutons de période configurables (par défaut 24 h, 4 j, 15 j,
-  30 j, 90 j et 6 mois) dans Paramètres → Réglages généraux → **« Paramétrage
+  30 j, 90 j et 6 mois) dans Paramètres → onglet « Paramètres » → **« Paramétrage
   des courbes »** : pour chaque durée, libellé du bouton et affichage au choix —
   **« Toute la courbe »** (chaque mesure au pas de collecte, limité à la
   rétention du brut) ou **« Min / Moy / Max »** (trois courbes, pas horaire
@@ -135,11 +157,15 @@ Tout se fait dans **Paramètres** (bandeau supérieur, compte admin).
   capteurs insérables d'un clic. La valeur est recalculée et historisée à
   chaque cycle de collecte (graphes compris) ; un calcul impossible (division
   par zéro…) affiche *invalide* sur la tuile et laisse un trou dans le graphe.
-  Un capteur virtuel **sans formule** est un état **réglable à la main** :
+  Un élément virtuel **sans formule** est un état **réglable à la main** :
   marqué pilotable (avec échelle, icônes et unité au besoin), il se règle
   depuis sa tuile comme une sortie et sa valeur est historisée s'il est
   surveillé — pratique pour une consigne ou un mode purement logiciel,
-  utilisable ensuite dans les formules d'autres capteurs virtuels.
+  utilisable ensuite dans les formules d'autres capteurs virtuels. La colonne
+  **Type** suit d'ailleurs la formule : **sortie** tant qu'il n'y en a pas,
+  **capteur** dès qu'une formule est posée. Une sortie peut rester non
+  pilotable (simple état affiché) ; et comme dans le tableau des
+  périphériques, ce mot est un lien vers la fenêtre d'essai et d'export.
 - **Icônes** : l'onglet « Icônes et fonds de page » accepte vos propres
   fichiers SVG/PNG, et propose un bouton « ✨ **Générer par IA** »
   (administrateur) : décrivez l'icône souhaitée, prévisualisez les
@@ -222,8 +248,9 @@ reposés par `install.sh` sur une machine neuve.
 - **Sauvegarder maintenant** lance l'archive immédiatement ; l'avancement
   s'affiche sous les boutons et l'opération se poursuit même si vous quittez la
   page.
-- **Sauvegardes automatiques** : cochez « Activer », donnez la date et l'heure
-  de la prochaine sauvegarde et une périodicité (tous les jours, tous les
+- **Sauvegardes automatiques** : donnez la date et l'heure de la prochaine
+  sauvegarde, une périodicité, puis cochez « Activer » (la case se refuse tant
+  que l'échéance n'est pas renseignée) — tous les jours, tous les
   2 jours, chaque semaine ou 2 semaines, tous les mois, 2 mois, 6 mois ou tous
   les ans). L'heure choisie est conservée d'une échéance à l'autre ; si le Pi
   était éteint, une seule sauvegarde de rattrapage est faite au redémarrage.

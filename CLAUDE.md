@@ -32,6 +32,7 @@ domopi setup/
 │   ├── main.py              app FastAPI : toutes les routes /api/*, sert le statique
 │   ├── db.py                schéma SQLite, réglages, query_series, rollup/purge
 │   ├── backup.py            archives .tar.gz, planification, export FTP, restauration
+│   ├── export_ods.py        export ODS des mesures (zip + XML écrits à la main)
 │   ├── auth.py              PBKDF2 + cookie de session signé HMAC, rôles
 │   ├── journal.py           journal applicatif avec niveaux de verbosité
 │   ├── formula.py           moteur de formules des capteurs virtuels
@@ -48,6 +49,7 @@ domopi setup/
 │   ├── css/app.css          thème unique « tableau électrique »
 │   ├── js/app.js            logique visualiseur
 │   ├── js/charts.js         renderChart() — SVG min/moy/max, sans dépendance
+│   ├── js/tile.js           tuiles + réglage sur échelle + graphe (partagés)
 │   ├── js/admin.js          logique admin
 │   ├── icons/               36 icônes SVG générées + uploads utilisateur
 │   └── backgrounds/         fonds de page (uploads)
@@ -273,14 +275,40 @@ min-max + 3 lignes).
 Les **durées proposées sous les graphes** sont configurables : réglage
 `chart_ranges` (JSON `[{label, span_s, mode}]`, mode `raw`/`minmax`, validé et
 trié par `main.py:_check_chart_ranges`, 1 à 8 entrées), édité dans l'admin
-(« Réglages généraux » → « Paramétrage des courbes » — cartes + dialogue sur le
-modèle des échelles, enregistrement immédiat, hors du bouton « Enregistrer les
-réglages » qui couvre le reste de la rubrique) et exposé aux lecteurs
+(onglet « Paramètres » → « Paramétrage des courbes » — cartes + dialogue sur le
+modèle des échelles, enregistrement immédiat) et exposé aux lecteurs
 via `/api/display`. Les défauts (24 h et 4 j bruts, 15/30/90 j et 6 mois en
 min/moy/max) sont dupliqués dans `db.py:DEFAULT_SETTINGS`, `app.js` et
 `admin.js` (`DEFAULT_RANGES`) — garder les trois cohérents. La « Fenêtre par
 défaut du graphe » d'un widget mémorise `range_s` : si cette durée disparaît
 du réglage, le graphe retombe sur le premier bouton.
+
+L'onglet **« Paramètres »** de l'admin regroupe « Échelles de pilotage »,
+« Affichage » (chiffres significatifs, séparateurs) et « Paramétrage des
+courbes ».
+
+### Enregistrement des réglages : à la volée, sans bouton
+
+**Règle d'interface : aucun bouton « Enregistrer » pour un réglage.** Comme le
+tableau des périphériques, tous les champs de réglage partent sur l'événement
+`change` — donc à la sortie de la cellule — via `admin.js:wireSetting(sel, key,
+get, after)` : un `PUT /api/settings` par champ (la route accepte les corps
+partiels), toast « Enregistré », et sur refus (400) message + `loadSettings()`
+pour que l'écran ne montre jamais une valeur absente de la base. Les boutons
+`#s-save` (réglages généraux/affichage) et `#bk-save` (sauvegarde) ont été
+supprimés le 27/07/2026 — l'incohérence était visible : le reste de l'admin
+enregistrait déjà à la volée. Trois points à respecter en ajoutant un réglage :
+
+- `wireSetting` refuse d'emblée un `<input type="number">` vide ou hors
+  `min`/`max` (`checkValidity()`) : sans bouton, il n'y a plus d'étape où
+  arbitrer une saisie en cours. Déclarer les bornes dans le HTML.
+- Couplages entre champs : le rappel `get` peut renvoyer `null` pour ne rien
+  envoyer. Deux cas réels — activer les sauvegardes automatiques sans échéance
+  (case re-décochée + message) et une date effacée (on n'écrase pas
+  `backup_next_ts` : un `0` ferait replanifier le collecteur).
+- `#bk-ftp-test` continue d'appeler `saveBackupSettings()` (envoi groupé) avant
+  le test : le clic déclenche bien le `change` du champ quitté, mais rien ne
+  garantit que ce `PUT` soit arrivé avant le `POST` du test.
 
 ### Rétention — `rollup_and_purge()` et `purge_journal()`
 
@@ -551,6 +579,51 @@ serveur). Exemples : gradateur 0-100 %, consigne 12-25 °C par 0.5 avec boutons
   off + icône on découpée par `clip-path: inset(calc(100% - var(--pct)) 0 0 0)`
   (classe `.stack`) — `--pct` = position normalisée sur la plage de l'échelle.
 
+## Essai et export d'un périphérique (admin → colonne « Type »)
+
+Livré le 27/07/2026. Dans le tableau des périphériques, le texte
+« sortie »/« capteur » de la colonne Type est un lien : il ouvre une **mini
+page de visualisation** du périphérique (`admin.js:openProbe`), pour vérifier
+d'un coup l'affichage, le pilotage et les données.
+
+- **Tuile 1** : exactement la tuile du visualiseur (`tile.js`) — ordres on/off,
+  réglage sur échelle (curseur + boutons), format des valeurs et icônes s'y
+  testent pour de vrai, avec les mêmes règles de clic.
+- **Tuiles 2 et 3** (si historique) : liens `GET /api/devices/{id}/export?kind=`
+  `detailed` (brut au pas de collecte) ou `summary` (min/moy/max par jour,
+  archives comprises) → fichier **ODS**.
+- **Tuile 4** (si historique) : `DELETE /api/devices/{id}/history` après
+  `confirm()` — efface `measures` et `measures_daily`, jamais `last_value`.
+- **Graphe** : le widget habituel, avec ses boutons de plage.
+
+Points à connaître :
+
+- `GET /api/devices/{id}/history-info` (admin) donne `{measures, daily,
+  first_ts, last_ts}` : c'est lui qui décide « 1 tuile ou 4 » et alimente les
+  volumes affichés. Un périphérique **dé-surveillé garde son historique** —
+  ne pas conditionner ces tuiles à `monitored`.
+- `openProbe` **relit `/api/devices` à l'ouverture** et fusionne le résultat
+  par `Object.assign` (jamais un remplacement : les lignes du tableau tiennent
+  des références sur ces objets). Sans cette relecture, changer l'échelle dans
+  le tableau ne met à jour que `scale_id`, pas l'objet `scale` embarqué, et la
+  tuile s'affichait en simple marche/arrêt.
+- Le dialogue vit dans `#dlg` ; les tuiles ouvrent leur réglage dans
+  **`#zoom-dlg`**, ajouté à `admin.html` pour l'occasion — deux `showModal()`
+  imbriqués, le second par-dessus.
+- Le tableau des **capteurs virtuels** n'a pas de colonne Type, donc pas encore
+  ce lien.
+
+### export_ods.py — ODS sans dépendance
+
+Un `.ods` est un zip : `mimetype` (**stocké non compressé, en premier** — exigé
+par la spécification), `META-INF/manifest.xml`, `content.xml`. Le XML est écrit
+à la main : pas d'odfpy ni de pandas sur le Pi. Horodatages en **cellules date**
+(heure locale, style d'affichage JJ/MM/AAAA HH:MM:SS) pour que les tableurs
+trient et tracent correctement ; valeurs en cellules `float`.
+`MAX_ROWS = 200 000` garde-fou mémoire : au-delà, seules les mesures les plus
+récentes partent. La construction tourne dans `asyncio.to_thread` (l'unique
+worker uvicorn ne doit pas bloquer sur une grosse base).
+
 ## Capteurs virtuels (formula.py + connectors/virtual.py)
 
 Capteurs **calculés par formule**, créés dans l'admin (onglet Périphériques,
@@ -597,6 +670,21 @@ graphes, rollup) fonctionne donc sans cas particulier.
   refusé et `PUT /api/devices/{id}` force `controllable=0` (case grisée dans
   l'admin) ; Échelle/Icônes/Unité restent actifs dans les deux cas
   (affichage).
+- **`kind` suit la formule** (27/07/2026) : un périphérique virtuel **avec**
+  formule est un `sensor` (« capteur » — valeur calculée), **sans** formule un
+  `actuator` (« sortie » — état posé à la main). C'est une conséquence, jamais
+  un champ éditable : `create_virtual_device` et `update_device` le
+  recalculent, et `db.init_db()` réaligne les périphériques du connecteur
+  virtuel à chaque démarrage (bases antérieures). Le type est **indépendant de
+  « Pilotable »** : une sortie non pilotable est un cas normal (état affiché,
+  non réglable depuis la tuile). La colonne « Type » du tableau des capteurs
+  virtuels l'affiche, avec le lien vers la fenêtre d'essai et d'export ; sa
+  largeur (61 px) a été financée en ramenant `.fcell { max-width }` de 300 à
+  238 px — c'est cette borne, et non le `width` en % de l'en-tête, qui décide
+  de la largeur de la colonne Formule (tableau inchangé : 1068 px).
+- Corollaire côté tuile (`tile.js`) : le clic ouvre le graphe pour **tout
+  périphérique non pilotable**, plus seulement pour `kind === "sensor"` — sans
+  quoi la tuile d'une sortie virtuelle non pilotable devenait inerte.
 
 ## Collecte (poller.py)
 
@@ -682,7 +770,22 @@ connecteur yamaha, né de ce constat).
 ## Frontend
 
 Aucune étape de build. `app.js` et `admin.js` sont des IIFE vanilla.
-`charts.js` expose `window.renderChart(container, data, opts)`. Le thème
+`charts.js` expose `window.renderChart(container, data, opts)`.
+
+`tile.js` expose **`window.DomoTile`** : tuile de périphérique (`card`),
+dialogue de réglage sur échelle (`openScale`), graphe et ses boutons de plage
+(`chart`, `openChart`), formats (`fmtNum`, `fmtScale`, `isOn`). Extrait
+d'`app.js` le 27/07/2026 pour être partagé avec l'admin (dialogue « Tester et
+exporter ») : une seule implémentation des règles d'interaction fines (clic
+court / double-clic / appui long, tempo d'auto-validation, état partiel en
+`clip-path`). Chaque écran lui passe son contexte par
+`DomoTile.configure({api, toast, dlg, body, onAck, mobile})` — l'`api` du
+visualiseur renvoie au login sur 401, celle de l'admin non — puis
+`setDisplay()` (chiffres significatifs, séparateurs) et `setRanges()` (durées
+des graphes) au chargement des réglages. `window.fmtNum` reste posé par
+`tile.js` pour `charts.js` : **charger `tile.js` avant `app.js`/`admin.js`**.
+
+Le thème
 (couleurs, mono) est centralisé dans les variables CSS de `:root` (app.css).
 Responsive : bascule mobile/desktop au seuil **700 px** (constante répétée dans
 `app.js:isMobile()` et les media queries CSS — garder les deux cohérents).

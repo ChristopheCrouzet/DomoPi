@@ -74,10 +74,10 @@ main { padding: 1rem; max-width: 1100px; margin: 0 auto; }
 .page-bg { min-height: calc(100vh - 46px); background-size: cover; background-position: center; }
 h1 { font-size: 1.25rem; margin: .2rem 0 1rem; letter-spacing: .04em; }
 h2 { font-size: 1.02rem; color: var(--amber); margin: 1.4rem 0 .6rem;
-     text-transform: uppercase; letter-spacing: .1em; border-bottom: 1px solid var(--line);
+     text-transform: uppercase; letter-spacing: .1em; border-bottom: 1px solid var(--amber);
      padding-bottom: .3rem; }
 h3 { font-size: .88rem; color: var(--amber); margin: 1rem 0 .4rem;
-     text-transform: uppercase; letter-spacing: .08em; }
+     letter-spacing: .04em; }
 .muted { color: var(--muted); }
 .crumbs { color: var(--muted); font-size: .85rem; margin-bottom: .8rem; }
 .crumbs a { color: var(--muted); }
@@ -140,6 +140,28 @@ input[type=range] { accent-color: var(--amber); }
   filter: drop-shadow(0 0 3px rgba(0,0,0,.65)); }
 #root-nav .navicon { width: 16px; height: 16px; vertical-align: -3px;
   margin-right: .3rem; }
+
+/* Tuiles d'action du dialogue « Tester et exporter » (admin) : exports ODS et
+   effacement de l'historique. Même cadre que les tuiles de page, mais le
+   libellé se replie (les tuiles du visualiseur sont en nowrap + ellipse) et la
+   hauteur suit le contenu à partir de la hauteur commune. */
+.card.act { align-items: center; justify-content: center; border-style: dashed;
+  text-decoration: none; color: inherit; }
+.grid > .card.act { height: auto; min-height: 122px; }
+.card.act .act-glyph { font-size: 1.5rem; line-height: 1;
+  filter: drop-shadow(0 0 3px rgba(0,0,0,.65)); }
+.card.act .name { white-space: normal; color: var(--txt); font-size: .84rem;
+  line-height: 1.2; }
+.card.act .hint { color: var(--muted); font-size: .72rem; text-align: center;
+  line-height: 1.15; }
+.card.act-danger:hover { border-color: var(--err); }
+.card.act-danger .name { color: var(--err); }
+/* Les 4 tuiles tiennent sur une ligne dans la largeur du dialogue (680 px) :
+   150 px de piste minimum n'en laissaient que 3, la dernière restait seule.
+   En mobile, la règle des 3 colonnes fixes (plus bas) doit rester maîtresse. */
+@media (min-width: 701px) {
+  #pb-grid { grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); }
+}
 
 /* ---------------- graphes ---------------- */
 .chart-box { background: color-mix(in srgb, var(--panel) 92%, transparent);
@@ -230,8 +252,11 @@ td .mono { font-family: var(--mono); }
    formule longue en nowrap élargit la colonne et décale tout le tableau) */
 .fsyn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: var(--mono); font-size: .82rem; }
+/* max-width réduite de 300 à 238 px le 27/07/2026 pour financer la colonne
+   « Type » (61 px) sans élargir le tableau : c'est cette borne, et non la
+   largeur en % de l'en-tête, qui décide de la largeur réelle de la colonne. */
 .fcell { display: flex; align-items: center; gap: .4rem; position: relative;
-  min-width: 120px; max-width: 300px; }
+  min-width: 120px; max-width: 238px; }
 .fcell .fsyn { flex: 1 1 auto; min-width: 0; }
 /* formule complète en infobulle multiligne au survol du texte tronqué */
 .fcell[data-full]:has(.fsyn:hover)::after {

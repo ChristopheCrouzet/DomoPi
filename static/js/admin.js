@@ -20,6 +20,30 @@
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+  /* Tuiles et graphes du dialogue « Tester et exporter » : même code que le
+     visualiseur (tile.js). Le dialogue #zoom-dlg lui est réservé — #dlg porte
+     déjà le dialogue d'où la tuile est ouverte. */
+  DomoTile.configure({
+    api, toast, dlg: $("#zoom-dlg"), body: $("#zoom-body"),
+    onAck: id => ackDevice(id),
+  });
+  /* Après une commande, on relit le périphérique et on remplace sa tuile :
+     l'icône et la valeur reflètent l'action sans attendre le cycle du poller. */
+  async function ackDevice(id) {
+    try {
+      const rows = await api("/api/devices/refresh", { method: "POST",
+        body: JSON.stringify({ ids: [id] }) });
+      rows.forEach(r => {
+        const d = devices.find(x => x.id === r.id);
+        if (d) { d.last_value = r.last_value; d.last_seen = r.last_seen; }
+      });
+    } catch { return; }                       // silencieux : simple confort
+    const grid = $("#pb-grid"), d = devices.find(x => x.id === id);
+    if (grid && grid.firstElementChild && d)
+      grid.firstElementChild.replaceWith(
+        DomoTile.card(d, { label: d.name, onChart: () => {} }));
+  }
+
   function dialog(html, onOpen) {
     const dlg = $("#dlg"); $("#dlg-body").innerHTML = html;
     if (onOpen) onOpen(dlg);
@@ -50,6 +74,7 @@
     await api("/api/settings", { method: "PUT", body: JSON.stringify({
       chart_ranges: JSON.stringify(next) }) });
     chartRanges = next;
+    DomoTile.setRanges(chartRanges);          // graphe du dialogue d'essai
     renderRanges();
   }
 
@@ -130,21 +155,51 @@
       const cr = JSON.parse(s.chart_ranges);
       if (Array.isArray(cr) && cr.length) chartRanges = cr;
     } catch { /* réglage absent (base antérieure) : défauts */ }
+    // Le dialogue d'essai affiche les valeurs comme le visualiseur.
+    DomoTile.setDisplay({ sig: Math.max(3, parseInt(s.display_sig_digits, 10) || 5),
+                          thou: s.display_thousands_sep ?? " ",
+                          dec: s.display_decimal_sep || "," });
+    DomoTile.setRanges(chartRanges);
     renderRanges();
     fillBackupSettings(s);
   }
-  $("#s-save").onclick = async () => {
-    await api("/api/settings", { method: "PUT", body: JSON.stringify({
-      site_title: $("#s-title").value,
-      poll_interval_s: $("#s-interval").value,
-      raw_retention_days: $("#s-retention").value,
-      journal_level: $("#s-jlevel").value,
-      journal_retention_days: $("#s-jret").value,
-      display_sig_digits: $("#s-sig").value,
-      display_thousands_sep: $("#s-thou").value,
-      display_decimal_sep: $("#s-dec").value }) });
-    toast("Réglages enregistrés");
-  };
+  /* Enregistrement à la volée, comme le tableau des périphériques : chaque
+     champ part à la sortie de la cellule (« change »), aucun bouton
+     « Enregistrer ». Un refus du serveur (400) affiche le message et
+     recharge les réglages, pour que l'écran ne montre jamais une valeur qui
+     n'est pas en base. `get` permet de normaliser la valeur, ou de renvoyer
+     null pour ne rien envoyer ; `after` s'exécute une fois l'enregistrement
+     confirmé. */
+  function wireSetting(sel, key, get, after) {
+    const el = $(sel);
+    el.addEventListener("change", async () => {
+      // Bornes déclarées dans le HTML (min/max) : sans bouton pour arbitrer,
+      // une valeur hors plage ou un champ numérique vidé sont refusés tout de
+      // suite et l'affichage repart de la base.
+      if (el.type === "number" && (el.value === "" || !el.checkValidity())) {
+        toast(el.validationMessage || "Valeur invalide");
+        return loadSettings();
+      }
+      const v = get ? get(el)
+        : (el.type === "checkbox" ? (el.checked ? "1" : "0") : el.value);
+      if (v === null) return;
+      try {
+        await api("/api/settings", { method: "PUT",
+          body: JSON.stringify({ [key]: String(v) }) });
+      } catch (e) { toast(e.message); return loadSettings(); }
+      toast("Enregistré");
+      if (after) after();
+    });
+  }
+
+  [["#s-title", "site_title"],
+   ["#s-interval", "poll_interval_s"],
+   ["#s-retention", "raw_retention_days"],
+   ["#s-jlevel", "journal_level"],
+   ["#s-jret", "journal_retention_days"],
+   ["#s-sig", "display_sig_digits"],
+   ["#s-thou", "display_thousands_sep"],
+   ["#s-dec", "display_decimal_sep"]].forEach(([sel, k]) => wireSetting(sel, k));
 
   /* ============================================ connecteurs */
   const LIVE_FIELD = ["live_refresh_s",
@@ -427,7 +482,110 @@
       pickIcon(chosen => save({ [img.dataset.pick]: chosen }).then(() => {
         img.src = chosen ? "/static/icons/" + chosen : ""; toast("Icône mise à jour");
       })));
+    // Lien « sortie »/« capteur » de la colonne Type : dialogue d'essai et
+    // d'export (le tableau des capteurs virtuels n'a pas cette colonne).
+    const probe = tr.querySelector("[data-a=probe]");
+    if (probe) probe.onclick = e => { e.preventDefault(); openProbe(d); };
     return save;
+  }
+
+  /* ====================================== essai et export d'un périphérique */
+  /* Ouvre une mini page de visualisation : la tuile telle qu'elle apparaîtra
+     aux lecteurs (donc pilotable : on/off, échelle, format des valeurs), les
+     exports ODS, l'effacement de l'historique, et le graphe habituel.
+     Les tuiles d'historique n'ont d'objet que s'il y a des données — un
+     périphérique dé-surveillé garde les siennes tant qu'on ne les efface pas. */
+  const fmtInt = n => String(n).replace(/\B(?=(\d{3})+$)/g, " ");
+  const fmtDay = ts => new Date(ts * 1000).toLocaleDateString("fr-FR",
+    { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  /* Tuile d'action du dialogue : même cadre que les tuiles du visualiseur,
+     mais libellé sur plusieurs lignes (classe .act) — un lien de
+     téléchargement (href) ou un bouton (onClick). */
+  function actionCard(glyph, label, hint, action) {
+    const c = document.createElement(action.href ? "a" : "div");
+    c.className = "card act clickable" + (action.danger ? " act-danger" : "");
+    if (action.href) { c.href = action.href; c.setAttribute("download", ""); }
+    else { c.tabIndex = 0; c.onclick = action.onClick;
+           c.onkeydown = e => { if (e.key === "Enter") action.onClick(); }; }
+    c.innerHTML = `<div class="act-glyph">${glyph}</div>
+      <div class="name">${esc(label)}</div>` +
+      (hint ? `<div class="hint">${esc(hint)}</div>` : "");
+    return c;
+  }
+
+  async function openProbe(d) {
+    // On relit les périphériques : le tableau modifie `scale_id` sans recharger
+    // l'objet `scale` embarqué par le serveur, et la valeur courante a pu
+    // changer depuis l'ouverture de la page. Object.assign (et non un
+    // remplacement) pour garder l'identité des objets référencés par les
+    // lignes du tableau.
+    try {
+      (await api("/api/devices")).forEach(r => {
+        const d0 = devices.find(x => x.id === r.id);
+        if (d0) Object.assign(d0, r);
+      });
+      d = devices.find(x => x.id === d.id) || d;
+    } catch { /* hors ligne : on ouvre avec ce qu'on a */ }
+    const dlg = $("#dlg");
+    $("#dlg-body").innerHTML = `<button class="dlg-x" id="pb-close" title="Fermer">✕</button>
+      <h2 style="margin-top:0">${esc(d.name)}</h2>
+      <p class="muted" style="margin:-.3rem 0 .8rem">${
+        [d.kind === "actuator" ? "Sortie" : "Capteur", esc(d.room), esc(d.connector_name)]
+          .filter(Boolean).join(" · ")}${d.monitored ? "" : " · non surveillé"}</p>
+      <div class="grid" id="pb-grid"></div>
+      <div id="pb-chart" style="margin-top:.7rem"></div>`;
+    $("#pb-close").onclick = () => dlg.close();
+    dlg.showModal();
+    fillProbe(d);
+  }
+
+  async function fillProbe(d) {
+    const grid = $("#pb-grid"), chartBox = $("#pb-chart");
+    if (!grid) return;                       // dialogue refermé entre-temps
+    grid.innerHTML = ""; chartBox.innerHTML = "";
+    // Tuile 1 : exactement celle du visualiseur (tile.js) — ordres on/off,
+    // réglage sur échelle et format des valeurs s'y testent pour de vrai.
+    grid.appendChild(DomoTile.card(d, { label: d.name, onChart: () => {} }));
+
+    let info = { measures: 0, daily: 0 };
+    try { info = await api(`/api/devices/${d.id}/history-info`); }
+    catch (e) { toast(e.message); }
+    const rows = info.measures + info.daily;
+    if (!rows) {
+      const p = document.createElement("p");
+      p.className = "muted"; p.style.marginTop = ".7rem";
+      p.textContent = d.monitored
+        ? "Aucune mesure enregistrée pour l'instant (l'historique se remplit au "
+          + "rythme de l'intervalle de collecte)."
+        : "Pas d'historique : ce périphérique n'est pas surveillé. Cochez "
+          + "« Surveillé » dans le tableau pour l'historiser.";
+      chartBox.appendChild(p);
+      return;
+    }
+    const period = info.first_ts
+      ? `du ${fmtDay(info.first_ts)} au ${fmtDay(info.last_ts || info.first_ts)}` : "";
+    grid.appendChild(actionCard("⬇", "Télécharger les données régulières",
+      `${fmtInt(info.measures)} mesure(s) au pas de collecte`,
+      { href: `/api/devices/${d.id}/export?kind=detailed` }));
+    grid.appendChild(actionCard("⬇", "Télécharger les données synthétiques",
+      "min / moyenne / max par jour" + (info.daily ? ", archives comprises" : ""),
+      { href: `/api/devices/${d.id}/export?kind=summary` }));
+    grid.appendChild(actionCard("🗑", "Effacer l'historique", period, {
+      danger: true,
+      onClick: async () => {
+        if (!confirm(`Effacer tout l'historique de « ${d.name} » ?\n\n` +
+                     `${fmtInt(info.measures)} mesure(s) et ${fmtInt(info.daily)} ` +
+                     "jour(s) archivé(s) seront supprimés définitivement.\n" +
+                     "Les graphes et les exports repartiront de zéro ; la valeur " +
+                     "courante et les widgets ne changent pas.")) return;
+        try {
+          const r = await api(`/api/devices/${d.id}/history`, { method: "DELETE" });
+          toast(`Historique effacé (${fmtInt(r.measures)} mesure(s))`);
+        } catch (e) { return toast(e.message); }
+        fillProbe(d);
+      } }));
+    chartBox.appendChild(DomoTile.chart(d, { label: d.name, height: 240 }).box);
   }
 
   function renderDevices() {
@@ -459,7 +617,8 @@
            title="Ne plus proposer ce périphérique pour les nouveaux widgets"></td>
       <td><input type="text" data-k="name" value="${esc(d.name)}" style="min-width:130px"></td>
       <td>${esc(d.room)}</td><td>${esc(d.connector_name)}</td>
-      <td>${d.kind === "actuator" ? "sortie" : "capteur"}</td>
+      <td><a href="#" data-a="probe" title="Tester et exporter ce périphérique"
+             >${d.kind === "actuator" ? "sortie" : "capteur"}</a></td>
       <td><input type="text" data-k="unit" value="${esc(d.unit)}" style="width:56px"></td>
       <td><input type="checkbox" data-k="controllable" ${d.controllable ? "checked" : ""}
            title="Pilotage autorisé (sorties, ou capteurs virtuels d'une box)"></td>
@@ -543,6 +702,8 @@
            title="Ne plus proposer ce capteur pour les nouveaux widgets"></td>
       <td><input type="text" data-k="name" value="${esc(d.name)}" style="min-width:120px"></td>
       <td><input type="text" data-k="room" value="${esc(d.room)}" style="width:90px"></td>
+      <td><a href="#" data-a="probe" title="Tester et exporter ce périphérique"
+             >${d.kind === "actuator" ? "sortie" : "capteur"}</a></td>
       <td><input type="text" data-k="unit" value="${esc(d.unit)}" style="width:56px"></td>
       <td><div class="fcell"${d.meta.formula ? ` data-full="${esc(d.meta.formula)}"` : ""}>
         <span class="fsyn ${d.meta.formula ? "" : "muted"}">${
@@ -562,7 +723,7 @@
           <img data-pick="icon_off" src="${d.icon_off ? "/static/icons/" + d.icon_off : ""}"
            alt="off" title="icône état inactif" style="width:26px;height:26px;cursor:pointer;background:var(--panel-2);border-radius:5px;padding:2px"></td>
       <td><button class="btn sm danger" data-a="del" title="Supprimer ce capteur virtuel">✕</button></td>
-      </tr>`).join("") || `<tr><td colspan="10" class="muted">Aucun capteur
+      </tr>`).join("") || `<tr><td colspan="11" class="muted">Aucun capteur
         virtuel pour l'instant.</td></tr>`;
 
     $("#virt-body").querySelectorAll("tr[data-id]").forEach(tr => {
@@ -1322,13 +1483,38 @@
     return true;
   }
 
-  $("#bk-save").onclick = async () => {
-    try {
-      if (!await saveBackupSettings()) return;
-    } catch (e) { return toast(e.message); }
-    toast("Réglages de sauvegarde enregistrés");
-    loadBackups();
-  };
+  /* Mêmes règles que les autres réglages : enregistrement à la sortie de la
+     cellule. Deux particularités : le dossier et le nombre d'archives
+     conservées changent la liste affichée (rechargement), et activer les
+     sauvegardes automatiques exige une échéance renseignée. */
+  const trimmed = el => el.value.trim();
+  wireSetting("#bk-dir", "backup_dir", trimmed, loadBackups);
+  wireSetting("#bk-keep", "backup_keep", null, loadBackups);
+  wireSetting("#bk-auto", "backup_auto", el => {
+    if (el.checked && !fromLocalInput($("#bk-next").value)) {
+      el.checked = false;
+      toast("Renseignez la date et l'heure de la prochaine sauvegarde");
+      return null;
+    }
+    return el.checked ? "1" : "0";
+  });
+  // Date incomplète ou effacée : on n'écrase pas l'échéance en base (0 ferait
+  // replanifier le collecteur à sa prochaine passe). Pour arrêter les
+  // sauvegardes automatiques, on décoche « Activer ».
+  wireSetting("#bk-next", "backup_next_ts", el => {
+    const t = fromLocalInput(el.value);
+    return t ? String(t) : null;
+  });
+  wireSetting("#bk-period", "backup_period");
+  wireSetting("#bk-ftp", "backup_ftp_enabled");
+  wireSetting("#bk-ftp-host", "backup_ftp_host", trimmed);
+  wireSetting("#bk-ftp-port", "backup_ftp_port");
+  wireSetting("#bk-ftp-dir", "backup_ftp_dir", trimmed);
+  wireSetting("#bk-ftp-anon", "backup_ftp_anon");
+  wireSetting("#bk-ftp-user", "backup_ftp_user");
+  wireSetting("#bk-ftp-pass", "backup_ftp_pass");
+  wireSetting("#bk-ftp-pasv", "backup_ftp_pasv");
+  wireSetting("#bk-ftp-tls", "backup_ftp_tls");
 
   $("#bk-ftp-test").onclick = async ev => {
     const btn = ev.currentTarget;

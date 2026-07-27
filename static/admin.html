@@ -100,17 +100,21 @@
      formule incalculable (division par zéro…) donne une valeur
      <i>invalide</i> : tuile marquée invalide, trou dans les graphes.
      Le bouton <span class="mono">[…]</span> ouvre l'éditeur de formule.
-     <b>Sans formule</b>, le capteur est un état virtuel <b>réglable à la
-     main</b> : cochez « Pilotable » (avec échelle, icônes et unité au besoin)
-     pour le régler depuis sa tuile — un capteur calculé, lui, ne se pilote
-     pas.</p>
+     <b>Sans formule</b>, l'élément passe en <b>sortie</b> : un état virtuel
+     <b>réglable à la main</b> — cochez « Pilotable » (avec échelle, icônes et
+     unité au besoin) pour le régler depuis sa tuile ; laissée décochée, la
+     sortie reste un simple état affiché. Un capteur calculé, lui, ne se pilote
+     pas. La colonne <i>Type</i> suit donc la formule, et son lien ouvre la
+     fenêtre d'essai et d'export.</p>
   <table>
     <thead>
       <tr>
         <th>Surv.</th>
         <th title="Masqué : non proposé pour les nouveaux widgets">Masquer</th>
-        <th>Nom</th><th>Pièce</th><th>Unité</th>
-        <th style="width:30%">Formule</th>
+        <th>Nom</th><th>Pièce</th>
+        <th title="Sortie tant qu'il n'y a pas de formule (état réglable à la main), capteur dès qu'une formule est posée">Type</th>
+        <th>Unité</th>
+        <th style="width:22%">Formule</th>
         <th>Pilotable</th>
         <th title="Échelle de pilotage proportionnel (onglet Paramètres)">Échelle</th>
         <th>Icônes on / off</th><th></th>
@@ -134,6 +138,36 @@
      pilotage tout-ou-rien seulement).</p>
   <div id="scales-list"></div>
   <button class="btn" id="scale-add" style="margin-top:.6rem">+ Nouvelle échelle</button>
+
+  <h2>Affichage</h2>
+  <p class="muted">Format des valeurs affichées sur les tuiles — chaque champ est
+     enregistré dès qu'on en sort.</p>
+  <div class="row">
+    <div><label for="s-sig">Chiffres significatifs (valeurs des tuiles)</label>
+      <input id="s-sig" type="number" min="3" max="10"></div>
+    <div><label for="s-thou">Séparateur de milliers</label>
+      <select id="s-thou">
+        <option value=" ">Espace</option>
+        <option value="">Aucun</option>
+        <option value=".">Point</option>
+        <option value="'">Apostrophe</option>
+      </select></div>
+    <div><label for="s-dec">Séparateur décimal</label>
+      <select id="s-dec">
+        <option value=",">Virgule</option>
+        <option value=".">Point</option>
+      </select></div>
+  </div>
+
+  <h2>Paramétrage des courbes</h2>
+  <p class="muted">Durées proposées sous chaque graphe (boutons, triés par durée
+     croissante — modifications enregistrées immédiatement).
+     « Toute la courbe » trace chaque mesure au pas de collecte —
+     limité à la rétention du brut, à réserver aux durées courtes.
+     « Min / Moy / Max » agrège par heure (moins de 15 jours) ou par jour, et
+     puise dans les archives journalières au-delà de la rétention du brut.</p>
+  <div id="ranges-list"></div>
+  <button class="btn" id="range-add" style="margin-top:.6rem">+ Nouvelle durée</button>
   </section>
 
   <section id="tab-icons" hidden>
@@ -152,6 +186,7 @@
 
   <section id="tab-general" hidden>
   <h2>Réglages généraux</h2>
+  <p class="muted">Chaque champ est enregistré dès qu'on en sort.</p>
   <div class="row">
     <div><label for="s-title">Titre du site</label><input id="s-title" type="text"></div>
     <div><label for="s-interval">Intervalle de collecte (secondes)</label>
@@ -169,37 +204,6 @@
     <div><label for="s-jret">Rétention du journal (jours)</label>
       <input id="s-jret" type="number" min="1"></div>
   </div>
-
-  <h3>Affichage</h3>
-  <div class="row">
-    <div><label for="s-sig">Chiffres significatifs (valeurs des tuiles)</label>
-      <input id="s-sig" type="number" min="3" max="10"></div>
-    <div><label for="s-thou">Séparateur de milliers</label>
-      <select id="s-thou">
-        <option value=" ">Espace</option>
-        <option value="">Aucun</option>
-        <option value=".">Point</option>
-        <option value="'">Apostrophe</option>
-      </select></div>
-    <div><label for="s-dec">Séparateur décimal</label>
-      <select id="s-dec">
-        <option value=",">Virgule</option>
-        <option value=".">Point</option>
-      </select></div>
-  </div>
-  <div class="row" style="margin-top:.6rem">
-    <div class="fix"><button class="btn primary" id="s-save">Enregistrer les réglages</button></div>
-  </div>
-
-  <h3>Paramétrage des courbes</h3>
-  <p class="muted">Durées proposées sous chaque graphe (boutons, triés par durée
-     croissante — modifications enregistrées immédiatement).
-     « Toute la courbe » trace chaque mesure au pas de collecte —
-     limité à la rétention du brut, à réserver aux durées courtes.
-     « Min / Moy / Max » agrège par heure (moins de 15 jours) ou par jour, et
-     puise dans les archives journalières au-delà de la rétention du brut.</p>
-  <div id="ranges-list"></div>
-  <button class="btn" id="range-add" style="margin-top:.6rem">+ Nouvelle durée</button>
 
   <h2>Contrôleurs domotiques</h2>
   <div id="conn-list"></div>
@@ -231,6 +235,7 @@
      main sur une installation neuve) : <span class="mono">/etc/domopi/domopi.env</span>
      (mot de passe admin initial, clé API), le certificat TLS et les
      configurations nginx/mosquitto.</p>
+  <p class="muted">Les réglages ci-dessous sont enregistrés dès qu'on sort du champ.</p>
   <div class="row">
     <div><label for="bk-dir">Dossier des sauvegardes sur le Pi (vide = dossier par défaut)</label>
       <input id="bk-dir" type="text" placeholder="/var/lib/domopi/backups"></div>
@@ -273,7 +278,6 @@
       FTPS (TLS)</label></div>
   </div>
   <div class="row" style="margin-top:.8rem">
-    <div class="fix"><button class="btn primary" id="bk-save">Enregistrer les réglages de sauvegarde</button></div>
     <div class="fix"><button class="btn" id="bk-ftp-test">Tester la connexion FTP</button></div>
     <div class="fix"><button class="btn" id="bk-now">Sauvegarder maintenant</button></div>
   </div>
@@ -290,6 +294,12 @@
 </main>
 
 <dialog id="dlg"><div style="padding:1.1rem" id="dlg-body"></div></dialog>
+<!-- Dialogue dédié aux tuiles/graphes de tile.js (« Tester et exporter » d'un
+     périphérique) : distinct de #dlg, qui reste au-dessus quand une tuile à
+     échelle ouvre son réglage. -->
+<dialog id="zoom-dlg"><div style="padding:1rem 1rem .7rem" id="zoom-body"></div></dialog>
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/tile.js"></script>
 <script src="/static/js/admin.js"></script>
 </body>
 </html>

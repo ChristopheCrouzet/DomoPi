@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import ClientDisconnect
 
-from . import backup, db, auth, formula, icon_ai, journal, poller
+from . import backup, db, auth, export_ods, formula, icon_ai, journal, poller
 from .connectors import REGISTRY
 # Chemins des dossiers statiques : définis une seule fois, dans backup.py (qui
 # les archive) et réutilisés ici (uploads, montage /static).
@@ -477,10 +477,13 @@ async def create_virtual_device(request: Request):
             raise HTTPException(400, f"Formule invalide : {chk['error']}")
     name = str(b.get("name") or "").strip() or "Capteur calculé"
     conn = db.get_conn()
+    # Type déduit de la formule, comme à la modification : sans formule, c'est
+    # une sortie (état posé à la main) ; avec formule, un capteur calculé.
     cur = conn.execute(
         "INSERT INTO devices(connector_id,external_id,name,kind,unit,room,"
-        "monitored,meta) VALUES(?,?,?,'sensor',?,?,1,?)",
+        "monitored,meta) VALUES(?,?,?,?,?,?,1,?)",
         (vid, f"virt-{int(time.time() * 1000)}", name,
+         "sensor" if text else "actuator",
          str(b.get("unit") or ""), str(b.get("room") or ""),
          json.dumps({"formula": text})))
     conn.commit()
@@ -535,6 +538,10 @@ async def update_device(did: int, request: Request):
     # Un capteur calculé (formule associée) ne se pilote pas : seul un capteur
     # virtuel sans formule est un état réglable à la main.
     computed = is_virtual and (meta.get("formula") or "").strip()
+    # Le type d'un périphérique virtuel suit sa formule : avec formule c'est
+    # un capteur (valeur calculée), sans formule c'est une sortie (état posé
+    # à la main) — pilotable ou non, l'utilisateur reste libre de la case.
+    kind = ("sensor" if computed else "actuator") if is_virtual else row["kind"]
     # La surveillance ne se retire pas tant qu'une fonction d'historique
     # (Deriver/Min/Max/Moy) d'un capteur virtuel s'appuie sur ce capteur.
     if row["monitored"] and not b.get("monitored", True):
@@ -558,18 +565,18 @@ async def update_device(did: int, request: Request):
             raise HTTPException(400, "Échelle inconnue")
     conn.execute(
         "UPDATE devices SET name=?, monitored=?, controllable=?, dimmable=?, "
-        "scale_id=?, hidden=?, icon_on=?, icon_off=?, unit=?, room=?, meta=? "
-        "WHERE id=?",
+        "scale_id=?, hidden=?, icon_on=?, icon_off=?, unit=?, room=?, meta=?, "
+        "kind=? WHERE id=?",
         (b.get("name", row["name"]),
          1 if b.get("monitored", row["monitored"]) else 0,
          # pilotable aussi pour un capteur (capteur virtuel d'une box)
          1 if b.get("controllable", row["controllable"]) and not computed else 0,
-         1 if b.get("dimmable", row["dimmable"]) and row["kind"] == "actuator" else 0,
+         1 if b.get("dimmable", row["dimmable"]) and kind == "actuator" else 0,
          sid,
          1 if b.get("hidden", row["hidden"]) else 0,
          b.get("icon_on", row["icon_on"]), b.get("icon_off", row["icon_off"]),
          b.get("unit", row["unit"]), b.get("room", row["room"]),
-         json.dumps(meta), did))
+         json.dumps(meta), kind, did))
     conn.commit()
     return {"ok": True}
 
@@ -632,6 +639,61 @@ async def refresh_devices(request: Request):
         f"SELECT id,last_value,last_seen FROM devices WHERE id IN ({qmarks})",
         ids).fetchall()
     return [dict(r) for r in out]
+
+
+@app.get("/api/devices/{did}/history-info")
+async def device_history_info(did: int, request: Request):
+    """Volume d'historique d'un périphérique (dialogue « Tester et exporter »).
+
+    Sert à décider si les tuiles d'export et d'effacement ont un objet : un
+    périphérique dé-surveillé garde son historique tant qu'on ne l'efface pas.
+    """
+    auth.require_admin(request)
+    conn = db.get_conn()
+    raw = conn.execute("SELECT COUNT(*) c, MIN(ts) a, MAX(ts) b FROM measures "
+                       "WHERE device_id=?", (did,)).fetchone()
+    day = conn.execute("SELECT COUNT(*) c, MIN(day) a FROM measures_daily "
+                       "WHERE device_id=?", (did,)).fetchone()
+    first = min([t for t in (raw["a"], day["a"]) if t], default=None)
+    return {"measures": raw["c"], "daily": day["c"],
+            "first_ts": first, "last_ts": raw["b"]}
+
+
+@app.get("/api/devices/{did}/export")
+async def export_device(did: int, request: Request, kind: str = "detailed"):
+    """Export ODS de l'historique d'un périphérique (lien direct du navigateur).
+
+    kind=detailed : mesures brutes au pas de collecte ; kind=summary : min /
+    moyenne / max par jour (archives comprises). Voir export_ods.py.
+    """
+    auth.require_admin(request)
+    if kind not in ("detailed", "summary"):
+        raise HTTPException(400, "Type d'export inconnu")
+    row = db.get_conn().execute("SELECT * FROM devices WHERE id=?", (did,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Périphérique inconnu")
+    # Construction dans un thread : sur une grosse base, elle bloquerait
+    # l'unique worker uvicorn.
+    data, fname, n = await asyncio.to_thread(export_ods.device_export, dict(row), kind)
+    journal.info("devices", f"export ODS « {row['name']} » "
+                            f"({'synthèses' if kind == 'summary' else 'mesures'}) "
+                            f": {n} ligne(s)")
+    return Response(content=data, media_type=export_ods.MIMETYPE,
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"',
+                             "Cache-Control": "no-store"})
+
+
+@app.delete("/api/devices/{did}/history")
+async def delete_device_history(did: int, request: Request):
+    """Efface l'historique d'un périphérique (mesures + archives journalières)."""
+    auth.require_admin(request)
+    row = db.get_conn().execute("SELECT name FROM devices WHERE id=?", (did,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Périphérique inconnu")
+    n_raw, n_day = await asyncio.to_thread(db.delete_history, did)
+    journal.warning("devices", f"historique effacé pour « {row['name']} » : "
+                               f"{n_raw} mesure(s), {n_day} jour(s) archivé(s)")
+    return {"ok": True, "measures": n_raw, "daily": n_day}
 
 
 # ================================================================ séries
