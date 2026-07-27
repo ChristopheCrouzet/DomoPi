@@ -50,6 +50,9 @@ cp -rf "$SRC_DIR/static/css" "$SRC_DIR/static/js" "$APP_DIR/static/"
 mkdir -p "$APP_DIR/static/icons" "$APP_DIR/static/backgrounds"
 cp -n "$SRC_DIR/static/icons/." "$APP_DIR/static/icons/" -r 2>/dev/null || true
 cp "$SRC_DIR/requirements.txt" "$APP_DIR/"
+# Bascule vers un certificat Let's Encrypt, à lancer plus tard en SSH :
+#   sudo domopi-https mondomaine.exemple.fr
+install -m 755 "$SRC_DIR/tools/setup-https.sh" /usr/local/sbin/domopi-https
 
 msg "Environnement Python (venv)…"
 [ -d "$APP_DIR/venv" ] || python3 -m venv "$APP_DIR/venv"
@@ -116,6 +119,18 @@ systemctl enable mosquitto >/dev/null
 systemctl restart mosquitto
 
 # ---------------------------------------------------------------- TLS
+# Racine des jetons de validation Let's Encrypt (voir nginx-domopi.conf).
+install -d -m 755 /var/www/certbot
+# Migration Let's Encrypt : domopi.crt/.key sont alors des liens vers
+# /etc/letsencrypt/live/<domaine>/. Un lien cassé (certificat révoqué, domaine
+# supprimé) doit repasser à l'auto-signé, sinon openssl écrirait *à travers* le
+# lien et nginx refuserait de démarrer.
+for f in "$TLS_DIR/domopi.crt" "$TLS_DIR/domopi.key"; do
+    if [ -L "$f" ] && [ ! -e "$f" ]; then
+        msg "Lien Let's Encrypt cassé ($f) : retour au certificat auto-signé."
+        rm -f "$TLS_DIR/domopi.crt" "$TLS_DIR/domopi.key"
+    fi
+done
 if [ ! -f "$TLS_DIR/domopi.crt" ]; then
     msg "Génération d'un certificat TLS auto-signé (10 ans)…"
     HOSTIP=$(hostname -I | awk '{print $1}')

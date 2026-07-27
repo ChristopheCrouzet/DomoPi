@@ -6,3 +6,6 @@ __pycache__/
 *.db-shm
 secret.key
 data/
+# Fichiers verrous des suites bureautiques (notice ouverte dans Word/LibreOffice)
+~$*
+.~lock.*#

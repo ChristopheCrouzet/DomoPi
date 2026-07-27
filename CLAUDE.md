@@ -55,13 +55,20 @@ domopi setup/
 │   └── backgrounds/         fonds de page (uploads)
 ├── tools/
 │   ├── make_icons.py        générateur des icônes SVG intégrées
+│   ├── make_notice.py       générateur de NOTICE-DomoPi.odt (ODT écrit à la main)
+│   │                        — n'écrase jamais la notice existante (--force)
+│   ├── setup-https.sh       bascule Let's Encrypt, posé en /usr/local/sbin/domopi-https
 │   ├── deploy.ps1           déploiement dev vers le Pi de test (voir plus bas)
 │   └── deploy-remote.sh     partie exécutée sur le Pi par deploy.ps1
 ├── deploy/                  domopi.service, nginx-domopi.conf, proxy-params,
 │                            mosquitto-domopi.conf
+├── doc/notice/              les 11 captures de la notice (versionnées : la
+│                            notice se régénère sans navigateur ; les (re)faire
+│                            avec .claude/skills/run-domopi/notice_shots.py)
 ├── install.sh              installeur idempotent (sudo bash install.sh)
 ├── requirements.txt
 ├── README.md               doc utilisateur
+├── NOTICE-DomoPi.odt       notice utilisateur — **générée**, ne pas retoucher
 └── CLAUDE.md               ce fichier
 ```
 
@@ -912,7 +919,24 @@ Le « double rendu » d'une page filtre les widgets par `layout`
 - Tests pytest + CI.
 - Migration/versionnage de schéma (actuellement `CREATE TABLE IF NOT EXISTS`,
   pas de migrations incrémentales).
-- Support Let's Encrypt directement dans l'installeur (aujourd'hui manuel,
-  documenté dans le README).
+- ~~Support Let's Encrypt~~ — fait le 27/07/2026 : `tools/setup-https.sh`,
+  posé par `install.sh` en `/usr/local/sbin/domopi-https`. Trois pièges qui ont
+  motivé sa forme actuelle, à ne pas défaire :
+  - le bloc `location ^~ /.well-known/acme-challenge/` de `nginx-domopi.conf`
+    doit rester **avant** la redirection, et celle-ci dans `location /` : un
+    `return` de niveau serveur s'exécute avant le choix de la location et
+    avalerait le jeton (ACME suivrait vers 443, où tout part dans uvicorn → 404) ;
+  - le certificat est branché par **liens** `/etc/domopi/tls/domopi.{crt,key}` →
+    `/etc/letsencrypt/live/<domaine>/` : `install.sh` réécrit la conf nginx à
+    chaque passage, une retouche de `ssl_certificate` serait perdue. D'où aussi
+    le garde-fou « lien cassé → retour à l'auto-signé » dans `install.sh`
+    (sinon `openssl` écrirait *à travers* le lien) ;
+  - le rechargement de nginx après renouvellement passe par le crochet
+    **global** `/etc/letsencrypt/renewal-hooks/deploy/` et non par un
+    `--deploy-hook` attaché au certificat : le script ignore l'émission quand
+    un certificat valide existe déjà (émis à la main, par exemple), et le
+    crochet doit exister dans ce cas aussi.
+- Le renouvellement exige que le **port 80 reste redirigé** vers le Pi (HTTP-01 ;
+  DNS-01 est hors de portée sur un domaine fourni par le FAI).
 - Connecteurs supplémentaires (Zigbee2MQTT réutiliserait le client HA-Discovery).
 - Export CSV des séries, seuils/alertes sur mesures.

@@ -12,6 +12,12 @@ tout périphérique numérique remonté par un connecteur est historisé et trac
 de la même façon (les courbes min/moy/max ont un sens pour n'importe quelle
 grandeur physique).
 
+**Notice d'utilisation** : `NOTICE-DomoPi.odt` (installation, contrôleurs,
+pages, dépannage, capteurs virtuels, HTTPS ; 11 captures d'écran). Le document
+est **le vôtre** : complétez-le. `tools/make_notice.py` en produit une version
+de base et **n'écrase jamais** un fichier existant — il dépose sa sortie à côté,
+en `NOTICE-DomoPi-genere-AAAAMMJJ.odt` (`--force` pour passer outre).
+
 Connecteurs fournis :
 
 - **eedomus** via l'API locale de la box (`http://<ip>/api/`)
@@ -43,7 +49,10 @@ identifiants, le certificat et les icônes/fonds déjà ajoutés.
 
 - Raspberry Pi 2 ou 3 (ou plus récent), carte SD 8 Go minimum.
 - Pour l'exposition Internet : une redirection de port sur votre box vers le Pi,
-  **uniquement le port 443**. Ne redirigez jamais le port 1883 (MQTT) ni le 8000.
+  **le port 443 seul** — plus le **port 80** si vous voulez un certificat
+  Let's Encrypt (voir « Sécurité »), le port 80 ne servant alors qu'à la
+  validation et à la redirection vers HTTPS. Ne redirigez jamais le port 1883
+  (MQTT) ni le 8000.
 
 ---
 
@@ -202,16 +211,59 @@ réellement enregistré.
 
 ### Passer à un certificat Let's Encrypt (optionnel)
 
-Si le Pi est joignable sur un nom de domaine public :
+Prérequis : un nom de domaine public pointant sur votre connexion (un
+`monnom.hd.free.fr` de Freebox convient) **et la redirection du port 80** vers
+le Pi, en plus du 443 — c'est par le port 80 que Let's Encrypt vient déposer et
+relire son jeton de validation (challenge HTTP-01), à l'émission comme à chaque
+renouvellement. Sans lui, aucune émission n'est possible : le domaine étant
+géré par le fournisseur, la validation par DNS ne vous est pas accessible.
+
+Tout est fait par un script posé par l'installeur, à lancer en session SSH :
 
 ```bash
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d mondomaine.exemple.fr
+sudo domopi-https mondomaine.exemple.fr
 ```
 
-Certbot adapte la configuration nginx et gère le renouvellement. Vous pouvez
-ensuite retirer les directives `ssl_certificate*` pointant vers le certificat
-auto-signé si certbot ne l'a pas déjà fait.
+Il installe certbot au besoin, vérifie que le nom se résout et que le jeton de
+validation est bien servi en clair, fait une **répétition à blanc** (serveur de
+test, sans consommer le quota d'émission), demande le certificat, branche nginx
+dessus, recharge, puis contrôle le renouvellement automatique. Relançable sans
+risque : un certificat déjà valide n'est pas réémis.
+
+Ce qu'il fait, si vous préférez le faire à la main :
+
+```bash
+sudo apt install certbot
+sudo certbot certonly --webroot -w /var/www/certbot -d mondomaine.exemple.fr \
+     --agree-tos -m vous@exemple.fr
+D=mondomaine.exemple.fr
+sudo ln -sfn /etc/letsencrypt/live/$D/fullchain.pem /etc/domopi/tls/domopi.crt
+sudo ln -sfn /etc/letsencrypt/live/$D/privkey.pem   /etc/domopi/tls/domopi.key
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+`--webroot` s'appuie sur le bloc `/.well-known/acme-challenge/` déjà présent
+dans la configuration nginx livrée : nginx n'est ni arrêté ni modifié. Le site
+est branché par des **liens** et non par une copie, parce que `install.sh`
+réécrit `nginx-domopi.conf` à chaque passage et que certbot remplace les
+fichiers à chaque renouvellement.
+
+Le renouvellement est automatique (minuteur `certbot.timer`) ; nginx est
+rechargé par le crochet global
+`/etc/letsencrypt/renewal-hooks/deploy/domopi-reload-nginx.sh`, posé lui aussi
+par le script. À vérifier une fois :
+
+```bash
+sudo certbot renew --dry-run
+systemctl list-timers certbot.timer
+```
+
+Note pour les domaines `*.hd.free.fr` : `free.fr` n'étant pas sur la *Public
+Suffix List*, tous les abonnés Free partagent le même quota d'émission chez
+Let's Encrypt. Si l'émission est refusée pour dépassement de quota (« too many
+certificates already issued »), la solution est un nom de domaine à vous
+(quelques euros par an), qui ouvre en prime la validation DNS-01 — donc sans
+exposer le port 80.
 
 ---
 
