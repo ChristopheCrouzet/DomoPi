@@ -46,6 +46,7 @@
 
   function dialog(html, onOpen) {
     const dlg = $("#dlg"); $("#dlg-body").innerHTML = html;
+    dlg.onclose = null;          // la fenêtre d'essai y accroche son suivi
     if (onOpen) onOpen(dlg);
     dlg.showModal();
     return dlg;
@@ -532,18 +533,73 @@
       <h2 style="margin-top:0">${esc(d.name)}</h2>
       <p class="muted" style="margin:-.3rem 0 .8rem">${
         [d.kind === "actuator" ? "Sortie" : "Capteur", esc(d.room), esc(d.connector_name)]
-          .filter(Boolean).join(" · ")}${d.monitored ? "" : " · non surveillé"}</p>
+          .filter(Boolean).join(" · ")}${d.monitored ? "" : " · non surveillé"}
+        · <span id="pb-live">actualisé toutes les ${PROBE_TICK_S} s</span></p>
       <div class="grid" id="pb-grid"></div>
-      <div id="pb-chart" style="margin-top:.7rem"></div>`;
+      <div id="pb-chart" style="margin-top:.7rem"></div>
+      <div id="pb-diag" style="margin-top:.8rem"></div>`;
     $("#pb-close").onclick = () => dlg.close();
     dlg.showModal();
+    // Le suivi s'arrête avec la fenêtre (fermeture par ✕ ou par Échap).
+    dlg.onclose = stopProbe;
     fillProbe(d);
+    startProbe(d);
+  }
+
+  /* Suivi pendant que la fenêtre est ouverte : la valeur doit bouger quand on
+     agit sur l'appareil lui-même (interrupteur mural, interface du WES...).
+     Chaque tick relit le périphérique auprès du contrôleur (sans historiser)
+     puis rafraîchit la tuile et le diagnostic — pas le graphe, qui perdrait
+     son zoom et sa plage. */
+  const PROBE_TICK_S = 5;
+  let probeTimer = null;
+
+  function stopProbe() {
+    clearInterval(probeTimer);
+    probeTimer = null;
+  }
+
+  function startProbe(d) {
+    stopProbe();
+    probeTimer = setInterval(async () => {
+      if (!$("#pb-grid")) return stopProbe();    // fenêtre remplacée
+      try {
+        const rows = await api("/api/devices/refresh", { method: "POST",
+          body: JSON.stringify({ ids: [d.id] }) });
+        rows.forEach(r => {
+          if (r.id === d.id) Object.assign(d, { last_value: r.last_value,
+                                                last_seen: r.last_seen });
+        });
+      } catch { /* silencieux : le tick suivant réessaie */ }
+      const grid = $("#pb-grid");
+      if (grid && grid.firstElementChild)
+        grid.firstElementChild.replaceWith(
+          DomoTile.card(d, { label: d.name, onChart: () => {} }));
+      renderDiag(d);
+    }, PROBE_TICK_S * 1000);
+  }
+
+  /* Diagnostic : partie commune + partie du connecteur (topic MQTT, dernier
+     message reçu et son âge...). Rendu en tableaux simples, valeurs en
+     police à chasse fixe car ce sont des topics et des charges utiles. */
+  async function renderDiag(d) {
+    const box = $("#pb-diag");
+    if (!box) return;
+    let data;
+    try { data = await api(`/api/devices/${d.id}/diag`); }
+    catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+    if (!$("#pb-diag")) return;                  // fenêtre fermée entre-temps
+    box.innerHTML = data.sections.map(s => `<h3>${esc(s.title)}</h3>
+      <table class="diag"><tbody>${s.rows.map(([k, v]) =>
+        `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</tbody></table>` +
+      s.notes.map(n => `<p class="diag-note">${esc(n)}</p>`).join("")).join("");
   }
 
   async function fillProbe(d) {
     const grid = $("#pb-grid"), chartBox = $("#pb-chart");
     if (!grid) return;                       // dialogue refermé entre-temps
     grid.innerHTML = ""; chartBox.innerHTML = "";
+    renderDiag(d);
     // Tuile 1 : exactement celle du visualiseur (tile.js) — ordres on/off,
     // réglage sur échelle et format des valeurs s'y testent pour de vrai.
     grid.appendChild(DomoTile.card(d, { label: d.name, onChart: () => {} }));

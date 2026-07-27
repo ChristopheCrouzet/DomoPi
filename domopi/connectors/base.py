@@ -40,3 +40,14 @@ class Connector:
 
     def set_value(self, device: dict, value: str) -> bool:
         raise NotImplementedError
+
+    def diagnose(self, device: dict) -> dict | None:
+        """Éléments de diagnostic d'un périphérique, pour l'admin (facultatif).
+
+        Renvoie `None` si le connecteur n'a rien de particulier à exposer, ou
+        un dict `{"title": str, "rows": [(libellé, valeur), ...],
+        "notes": [str, ...]}` affiché tel quel dans la fenêtre « Tester et
+        exporter ». Ne jamais y mettre d'identifiant : ce contenu part au
+        navigateur (mots de passe du contrôleur exclus).
+        """
+        return None

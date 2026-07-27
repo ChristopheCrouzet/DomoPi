@@ -156,6 +156,18 @@ input[type=range] { accent-color: var(--amber); }
   line-height: 1.15; }
 .card.act-danger:hover { border-color: var(--err); }
 .card.act-danger .name { color: var(--err); }
+/* Diagnostic de la fenêtre « Tester et exporter » : libellé à gauche, valeur
+   à chasse fixe à droite (ce sont des topics et des charges utiles, qui
+   doivent pouvoir se couper n'importe où sans élargir la fenêtre). */
+table.diag { width: 100%; table-layout: fixed; }
+table.diag th { width: 40%; text-align: left; vertical-align: top;
+  font-weight: 400; color: var(--muted); font-size: .82rem; padding: .18rem .5rem .18rem 0; }
+table.diag td { font-family: var(--mono); font-size: .8rem; vertical-align: top;
+  overflow-wrap: anywhere; padding: .18rem 0; }
+.diag-note { color: var(--amber); font-size: .82rem; margin: .4rem 0 0;
+  border-left: 2px solid var(--amber); padding-left: .5rem; }
+#pb-live { color: var(--muted); }
+
 /* Les 4 tuiles tiennent sur une ligne dans la largeur du dialogue (680 px) :
    150 px de piste minimum n'en laissaient que 3, la dernière restait seule.
    En mobile, la règle des 3 colonnes fixes (plus bas) doit rester maîtresse. */

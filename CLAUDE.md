@@ -595,6 +595,23 @@ d'un coup l'affichage, le pilotage et les données.
 - **Tuile 4** (si historique) : `DELETE /api/devices/{id}/history` après
   `confirm()` — efface `measures` et `measures_daily`, jamais `last_value`.
 - **Graphe** : le widget habituel, avec ses boutons de plage.
+- **Diagnostic** (`GET /api/devices/{id}/diag`, admin) : une section commune
+  (contrôleur, identifiant côté contrôleur, valeur courante, âge de la
+  dernière lecture, surveillé, pilotable) plus, si le connecteur en propose
+  une, sa propre section — le connecteur MQTT y met topic d'état, abonnement,
+  nombre de messages, **âge du dernier message et sa charge utile brute**,
+  template et valeur extraite, topic et charges utiles de commande. Le
+  connecteur remplit cela via le point d'extension facultatif
+  `Connector.diagnose(device)` (`base.py`) : `{title, rows: [(clé, valeur)],
+  notes: [str]}`. **Ne jamais y faire figurer d'identifiant** — ce contenu
+  part au navigateur. Un `diagnose()` qui échoue n'empêche pas la réponse.
+- **Suivi pendant l'ouverture** : toutes les `PROBE_TICK_S` (5 s), la fenêtre
+  relit le périphérique (`POST /api/devices/refresh`, sans historiser) puis
+  reconstruit la tuile et le diagnostic — indispensable pour voir bouger une
+  sortie actionnée depuis l'appareil lui-même (interrupteur mural, interface
+  du WES). Le graphe n'est **pas** re-rendu (il perdrait zoom et plage). Le
+  timer est arrêté par `dlg.onclose` ; `dialog()` remet `onclose` à `null`
+  pour les autres fenêtres.
 
 Points à connaître :
 
@@ -747,6 +764,30 @@ config dans `static/js/admin.js:CONN_FIELDS` / `CONN_DEFAULTS`.
   mémorise les entités et leurs `state_topic`, met en cache les derniers
   payloads, et `poll()` lit ce cache. `set_value` publie sur `command_topic`.
   Doc : https://www.cartelectronic-blog.fr/wes-et-homeassistant-en-mqtt/
+  (guide utilisateur : il ne documente **pas** le format des annonces — pour
+  savoir ce que publie vraiment un appareil, capturer le broker :
+  `mosquitto_sub -h 127.0.0.1 -u … -P … -t '#' -v -W 30`).
+
+  Quatre points appris sur les E/S TOR du WES (SW1-24 et relais), 27/07/2026 :
+
+  - **Les annonces HA Discovery sont souvent abrégées** : `pl_on`/`pl_off`,
+    `stat_on`/`stat_off`, `dev`… Ne lire que la forme longue faisait retomber
+    `payload_on` sur son défaut `"ON"` alors que l'appareil attendait `"1"` :
+    commande publiée sur le bon topic, **ignorée en silence** — symptôme « les
+    relais ne se pilotent pas ». Toute clé lue doit accepter les deux formes
+    (helper `g()` dans `_handle_config`).
+  - **`_extract` gère plus que `{{ value_json.X }}`** : crochets simples ou
+    doubles, chemins imbriqués, index de liste, filtres `| int`. Une forme non
+    gérée renvoyait `None`, donc « pas de réponse » sans autre explication.
+  - **`_live_meta()`** : la dernière annonce reçue prime sur la copie en base
+    (figée à la découverte). Une correction de lecture des annonces s'applique
+    ainsi sans re-découverte.
+  - **Trois pannes de lecture à distinguer** (ce que fait `diagnose()`, et que
+    le journal en mode verbeux dit maintenant explicitement) : l'appareil
+    n'annonce **pas de topic d'état** ; le topic est annoncé mais **rien n'a
+    été publié depuis la connexion** (état non *retained*, publié seulement au
+    changement) ; le **template ne trouve rien** dans la charge utile. Le
+    connecteur horodate chaque message reçu (`_times`, `_counts`) pour cela.
 
 ## API (main.py)
 

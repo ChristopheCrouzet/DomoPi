@@ -641,6 +641,55 @@ async def refresh_devices(request: Request):
     return [dict(r) for r in out]
 
 
+@app.get("/api/devices/{did}/diag")
+async def device_diag(did: int, request: Request):
+    """Diagnostic d'un périphérique (fenêtre « Tester et exporter »).
+
+    Partie commune (valeur courante, dernière lecture, surveillance) + partie
+    fournie par le connecteur s'il en propose une (`Connector.diagnose`) : le
+    connecteur MQTT y publie topic d'état, dernier message reçu et son âge.
+    Aucun identifiant de contrôleur n'est exposé.
+    """
+    auth.require_admin(request)
+    conn = db.get_conn()
+    row = conn.execute(
+        "SELECT d.*, c.name AS connector_name, c.type AS connector_type, "
+        "c.enabled AS connector_enabled FROM devices d "
+        "JOIN connectors c ON c.id=d.connector_id WHERE d.id=?", (did,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Périphérique inconnu")
+    dev = dict(row) | {"meta": json.loads(row["meta"] or "{}")}
+    now = int(time.time())
+    common = [
+        ("Contrôleur", f"{row['connector_name']} ({row['connector_type']})"
+                       + ("" if row["connector_enabled"] else " — DÉSACTIVÉ")),
+        ("Identifiant côté contrôleur", row["external_id"]),
+        ("Valeur courante", "—" if row["last_value"] in (None, "")
+                            else str(row["last_value"])),
+        ("Dernière lecture", "jamais" if not row["last_seen"]
+                             else f"il y a {now - row['last_seen']} s"),
+        ("Surveillé (historisé)", "oui" if row["monitored"] else "non"),
+        ("Pilotable", "oui" if row["controllable"] else "non"),
+    ]
+    out = {"sections": [{"title": "Périphérique", "rows": common, "notes": []}]}
+    inst = poller.get_instance(row["connector_id"])
+    if inst is None:
+        out["sections"][0]["notes"].append(
+            "Contrôleur indisponible (désactivé ou en erreur) : ni lecture ni "
+            "commande ne peuvent aboutir.")
+        return out
+    try:
+        extra = await asyncio.to_thread(inst.diagnose, dev)
+    except Exception as exc:                      # un diagnostic ne doit rien casser
+        journal.debug("diag", f"diagnostic connecteur {row['connector_id']} : {exc}")
+        extra = None
+    if extra:
+        out["sections"].append({"title": extra.get("title", "Connecteur"),
+                                "rows": [list(r) for r in extra.get("rows", [])],
+                                "notes": extra.get("notes", [])})
+    return out
+
+
 @app.get("/api/devices/{did}/history-info")
 async def device_history_info(did: int, request: Request):
     """Volume d'historique d'un périphérique (dialogue « Tester et exporter »).

@@ -100,9 +100,19 @@ réellement enregistré.
     jour, archives comprises — donc bien au-delà de la rétention du brut ;
   - **« Effacer l'historique »** : supprime les mesures de ce périphérique
     (confirmation demandée) ; la valeur courante et les widgets sont conservés ;
-  - le **graphe** habituel, avec ses boutons de période.
+  - le **graphe** habituel, avec ses boutons de période ;
+  - un **diagnostic** : contrôleur, valeur courante, âge de la dernière
+    lecture, et — pour un appareil MQTT — état de la connexion au broker,
+    topic d'état, **date et contenu du dernier message reçu**, template
+    appliqué et valeur extraite, topic et charges utiles de commande. C'est là
+    qu'on voit pourquoi une valeur ne remonte pas : appareil qui n'annonce
+    aucun topic d'état, topic annoncé mais jamais publié, ou template qui ne
+    correspond pas au message reçu.
 
-  Les trois dernières tuiles n'apparaissent que si des données ont été
+  Tant que la fenêtre reste ouverte, la tuile et le diagnostic sont
+  **actualisés toutes les 5 secondes** : agissez sur l'appareil lui-même
+  (interrupteur mural, interface du WES) et vous voyez la valeur suivre.
+  Les trois tuiles de données n'apparaissent que si des mesures ont été
   enregistrées.
 - **Pages** : arborescentes, plusieurs racines possibles. Chaque page a un fond
   paramétrable (couleur ou image), et une option « double rendu » pour définir
